@@ -1,6 +1,6 @@
 # rs_recorder.py で記録した .db3 を再生しながら MediaPipe で骨格推定し，
 # 関節3D座標（手指21点 + 右腕3点）を skeleton3d.npz に保存する．
-# 3D表示は行わない．再構成は rs_reconstruct3d.py で行う．
+# 3D表示は行わない．再構成は rs_reconstruct.py で行う．
 
 from pathlib import Path
 
@@ -17,7 +17,23 @@ from mediapipe.tasks.python.vision.core import vision_task_running_mode as runni
 
 # ── 入出力 ────────────────────────────────────────
 RECORDINGS_DIR = Path(__file__).parent.parent / "recordings"
-FILEPATH = RECORDINGS_DIR / "rec_20260729_113731" / "session.db3"
+FILEPATH = None   # None なら recordings/ 内の最新 session.db3 を自動選択
+
+
+def resolve_filepath(filepath, name="session.db3"):
+    """filepath が None なら recordings/*/name のうち最も新しいものを返す．"""
+    if filepath is not None:
+        p = Path(filepath)
+        if not p.exists():
+            raise FileNotFoundError(f"指定されたファイルがありません: {p}")
+        return p
+    cands = list(RECORDINGS_DIR.glob(f"*/{name}"))
+    if not cands:
+        raise FileNotFoundError(f"{RECORDINGS_DIR}/*/{name} が見つかりません")
+    return max(cands, key=lambda p: p.stat().st_mtime)
+
+
+FILEPATH = resolve_filepath(FILEPATH)
 OUTPATH  = FILEPATH.parent / "skeleton3d.npz"
 
 # ── MediaPipe 設定 ────────────────────────────────
