@@ -1,5 +1,5 @@
-# player.pyで記録した .db3 を再生する．
-# FILE PATH を編集して実行する．None のままなら recordings/ 内の最新セッションを自動選択する．
+# rs_recorder.py で記録した .db3 を再生する．
+# FILEPATH を編集して実行する．None のままなら recordings/ 内の最新セッションを自動選択する．
 
 from pathlib import Path
 
@@ -8,9 +8,24 @@ import cv2
 import pyrealsense2 as rs
 
 RECORDINGS_DIR = Path(__file__).parent.parent / "recordings"
-FILEPATH = RECORDINGS_DIR / "rec_20260729_113731" / "session.db3"
-
+FILEPATH = None   # None なら recordings/ 内の最新 session.db3 を自動選択
 DEPTH_VIS_ALPHA = 0.03   # z16 -> 8bit 圧縮係数
+
+
+def resolve_filepath(filepath, name="session.db3"):
+    """FILEPATH が None なら recordings/*/name のうち最も新しいものを返す．"""
+    if filepath is not None:
+        p = Path(filepath)
+        if not p.exists():
+            raise FileNotFoundError(f"指定されたファイルがありません: {p}")
+        return p
+    cands = list(RECORDINGS_DIR.glob(f"*/{name}"))
+    if not cands:
+        raise FileNotFoundError(f"{RECORDINGS_DIR}/*/{name} が見つかりません")
+    return max(cands, key=lambda p: p.stat().st_mtime)
+
+
+FILEPATH = resolve_filepath(FILEPATH)
 
 cfg = rs.config()
 rs.config.enable_device_from_file(cfg, str(FILEPATH), repeat_playback=False)
