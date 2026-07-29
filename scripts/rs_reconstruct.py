@@ -1,20 +1,32 @@
-# rs_estimate3d.py で保存した skeleton3d.npz を読み込み，
-# Open3D で骨格を3D再構成して再生する．
-# タイムスタンプに従って記録時と同じ速さで再生する．
+# recordings/ 内の最新 rec_* を読み込み，
+#   - skeleton3d.npz : 3D関節座標 → Open3D で3D骨格表示
+#   - session.db3    : RealSense録画 → OpenCV で元のRGB画像に関節を重畳表示
+# を，記録時のタイムスタンプに従って同じ速さでループ再生する．
+#   q キー または どちらかのウィンドウを閉じると終了
 
 import time
 from pathlib import Path
 
+import cv2
 import numpy as np
 import open3d as o3d
+import pyrealsense2 as rs
 
 RECORDINGS_DIR = Path(__file__).parent.parent / "recordings"
-FILEPATH = RECORDINGS_DIR / "rec_20260729_113731" / "skeleton3d.npz"
+REC_DIR   = sorted(RECORDINGS_DIR.glob("rec_*"))[-1]   # 最新の録画
+FILEPATH  = REC_DIR / "skeleton3d.npz"
+DB3_PATH  = REC_DIR / "session.db3"
 
 # ── 表示パラメータ ────────────────────────────────
 JOINT_RADIUS_HAND = 0.006   # [m] 手指関節の球半径
 JOINT_RADIUS_ARM  = 0.012   # [m] 腕関節の球半径
-SPHERE_RESOLUTION = 4       # 球の分割数（大きいほど滑らか・重い）
+SPHERE_RESOLUTION = 4       # 球の分割数
+
+# ── 2D 表示パラメータ ─────────────────────────────
+IMG_W, IMG_H = 640, 480
+FX, FY, CX, CY = 600.0, 600.0, 320.0, 240.0
+DOT_HAND, DOT_ARM = 4, 7
+LINE_2D = 2
 
 # ── 色定義 ────────────────────────────────────────
 COLOR_THUMB  = [1.00, 0.35, 0.35]   # 親指：赤
@@ -75,6 +87,17 @@ HAND_BONE_COLORS = np.array([bone_color(i, j) for i, j in HAND_CONNECTIONS])
 ARM_BONE_COLORS  = np.tile(COLOR_ARM_BONE, (len(ARM_CONNECTIONS), 1))
 
 
+# ── OpenCV 用（BGR 0-255）に変換 ──────────────────
+def to_bgr(c):
+    return tuple(int(round(v * 255)) for v in c[::-1])
+
+
+HAND_POINT_BGR = [to_bgr(c) for c in HAND_POINT_COLORS]
+HAND_BONE_BGR  = [to_bgr(c) for c in HAND_BONE_COLORS]
+ARM_POINT_BGR  = [to_bgr(c) for c in ARM_POINT_COLORS]
+ARM_BONE_BGR   = [to_bgr(c) for c in ARM_BONE_COLORS]
+
+
 # ── グリッド ──────────────────────────────────────
 def build_grid(pts, lines, color):
     ls = o3d.geometry.LineSet()
@@ -112,8 +135,7 @@ def build_back_grid(center_z=1.0, x_range=1.2, y_range=1.0, step=0.2):
 
 # ── 関節（球メッシュ） ────────────────────────────
 class JointSpheres:
-    """関節数ぶんの球をまとめて1つのメッシュとして保持し，頂点移動で更新する．
-    点群（四角いスプライト）ではなく球なので，どの角度から見ても丸く見える．"""
+    """関節数ぶんの球をまとめて1つのメッシュとして保持し，頂点移動で更新する．"""
 
     def __init__(self, colors, radius, resolution=SPHERE_RESOLUTION):
         sphere = o3d.geometry.TriangleMesh.create_sphere(radius=radius,
@@ -131,12 +153,12 @@ class JointSpheres:
         self.mesh.vertices  = o3d.utility.Vector3dVector(self.base.copy())
         self.mesh.triangles = o3d.utility.Vector3iVector(tris)
         self.mesh.vertex_colors = o3d.utility.Vector3dVector(cols)
-        self.mesh.compute_vertex_normals()   # 以降は平行移動のみなので法線は不変
+        self.mesh.compute_vertex_normals()
 
     def update(self, pts, valid):
         offs = np.repeat(np.nan_to_num(pts), self.n_vert, axis=0)
         v = self.base + offs
-        v[np.repeat(~np.asarray(valid, dtype=bool), self.n_vert)] = 0.0  # 潰して非表示
+        v[np.repeat(~np.asarray(valid, dtype=bool), self.n_vert)] = 0.0 
         self.mesh.vertices = o3d.utility.Vector3dVector(v)
 
 
@@ -153,8 +175,7 @@ def set_lineset(ls, pts, connections, colors):
 
 def estimate_center(hand_pts, hand_valid, arm_pts, arm_valid,
                     n_use=10, default=(0.0, 0.0, 1.0)):
-    """最初に関節が推定されたフレーム群（最大 n_use 個）から表示中心を求める．
-    有効な関節が1つも無い場合は default を返す．"""
+    """最初に関節が推定されたフレーム群（最大 n_use 個）から表示中心を求める．"""
     centers = []
     for f in range(len(hand_valid)):
         pts = []
@@ -171,6 +192,78 @@ def estimate_center(hand_pts, hand_valid, arm_pts, arm_valid,
     return np.mean(centers, axis=0)
 
 
+# ══════════════════════════════════════════════════
+#  録画ファイル（session.db3）からのカラー画像取り出し
+# ══════════════════════════════════════════════════
+class ColorPlayback:
+    """RealSense録画を非リアルタイムで開き，指定した相対時刻まで進めて画像を返す．"""
+
+    def __init__(self, path):
+        self.path = str(path)
+        self.pipeline = None
+        self.open()
+
+    def open(self):
+        """先頭から開き直す（ループ再生用）．"""
+        if self.pipeline is not None:
+            self.pipeline.stop()
+        cfg = rs.config()
+        cfg.enable_device_from_file(self.path, repeat_playback=False)
+        self.pipeline = rs.pipeline()
+        profile = self.pipeline.start(cfg)
+        profile.get_device().as_playback().set_real_time(False)  # 再生速度は自前で制御
+
+        intr = (profile.get_stream(rs.stream.color)
+                .as_video_stream_profile().intrinsics)
+        self.intrinsics = intr
+
+        self.t0  = None    # 録画内カラーフレームの先頭タイムスタンプ [ms]
+        self.ts  = -1.0    # 現在保持しているフレームの相対時刻 [ms]
+        self.img = None
+        self.eof = False
+
+    def read(self, rel_ms):
+        """記録開始からの相対時刻 rel_ms に追いつくまでフレームを進める．"""
+        while not self.eof and self.ts < rel_ms:
+            try:
+                frames = self.pipeline.wait_for_frames(timeout_ms=2000)
+            except RuntimeError:      # ファイル終端
+                self.eof = True
+                break
+            cf = frames.get_color_frame()
+            if not cf:
+                continue
+            if self.t0 is None:
+                self.t0 = cf.get_timestamp()
+            self.ts  = cf.get_timestamp() - self.t0
+            self.img = np.asanyarray(cf.get_data()).copy()
+        return self.img
+
+    def close(self):
+        if self.pipeline is not None:
+            self.pipeline.stop()
+
+
+# ── 2D 投影表示 ───────────────────────────────────
+def project(pt):
+    """カメラ座標系の3D点 → 画像座標（ピンホール投影）"""
+    x, y, z = pt
+    if not np.isfinite(z) or z <= 0.01:
+        return None
+    return (int(FX * x / z + CX), int(FY * y / z + CY))
+
+
+def draw_skeleton_2d(img, pts, valid, connections, bone_bgr, point_bgr, radius):
+    uv = [project(p) if v else None for p, v in zip(pts, valid)]
+    for k, (i, j) in enumerate(connections):
+        if uv[i] and uv[j]:
+            cv2.line(img, uv[i], uv[j], bone_bgr[k], LINE_2D)
+    for k, p in enumerate(uv):
+        if p:
+            cv2.circle(img, p, radius, point_bgr[k], -1)
+    return img
+
+
 # ── データ読み込み ────────────────────────────────
 data       = np.load(FILEPATH)
 timestamps = data["timestamps"]   # (N,)   [ms]
@@ -179,6 +272,12 @@ hand_valid = data["hand_valid"]   # (N,21)
 arm_pts    = data["arm_pts"]      # (N,3,3)
 arm_valid  = data["arm_valid"]    # (N,3)
 n_frames   = len(timestamps)
+
+player = ColorPlayback(DB3_PATH) if DB3_PATH.exists() else None
+if player is not None:            # 録画ファイルの内部パラメータを使う
+    intr = player.intrinsics
+    FX, FY, CX, CY = intr.fx, intr.fy, intr.ppx, intr.ppy
+    IMG_W, IMG_H   = intr.width, intr.height
 
 # ── ビジュアライザ構築 ────────────────────────────
 vis = o3d.visualization.Visualizer()
@@ -212,45 +311,82 @@ ctr.set_up([0.0, -1.0, 0.0])
 view_center = estimate_center(hand_pts, hand_valid, arm_pts, arm_valid)
 ctr.set_lookat(view_center)
 
-# ── 再生ループ ────────────────────────────────────
-print(f"[RECONSTRUCT] {FILEPATH}  ({n_frames} frames, close window to quit)")
+WINDOW_2D = "RGB + Skeleton (2D)"
+cv2.namedWindow(WINDOW_2D)
+cv2.imshow(WINDOW_2D, np.zeros((IMG_H, IMG_W, 3), dtype=np.uint8))
+
+
+def wait_until(deadline):
+    """再生時刻まで待機．ウィンドウ操作は受け付ける．終了要求なら False．"""
+    while time.monotonic() < deadline:
+        if not vis.poll_events():
+            return False
+        vis.update_renderer()
+        if cv2.waitKey(1) & 0xFF == ord('q'):
+            return False
+    return True
+
+
+# ── 再生ループ（終了までループ再生） ──────────────
+print(f"[RECONSTRUCT] {FILEPATH}  ({n_frames} frames, loop playback)")
+print(f"[2D] background = {'session.db3' if player else 'black canvas'}")
+print(f"[INTRINSICS] fx={FX:.1f} fy={FY:.1f} cx={CX:.1f} cy={CY:.1f}")
 print(f"[VIEW] lookat = {np.round(view_center, 3)}")
 print("[COLOR] thumb:red  index:yellow  middle:green  ring:blue  pinky:purple")
-t0_wall = time.monotonic()
-t0_rec  = timestamps[0]
-running = True
+print("[KEY] q: quit")
 
-for f in range(n_frames):
-    # 記録タイムスタンプに合わせて待機（実時間再生）
-    target = (timestamps[f] - t0_rec) / 1000.0
-    while time.monotonic() - t0_wall < target:
+running = True
+while running:
+    t0_wall = time.monotonic()
+    t0_rec  = timestamps[0]
+    if player is not None:
+        player.open()          # 録画を先頭に巻き戻す
+
+    for f in range(n_frames):
+        rel_ms = timestamps[f] - t0_rec
+
+        # 記録タイムスタンプに合わせて待機（実時間再生）
+        if not wait_until(t0_wall + rel_ms / 1000.0):
+            running = False
+            break
+
+        # 手指：有効点のみ表示，骨格線は両端が有効なもののみ
+        hv = hand_valid[f]
+        hand_joints.update(hand_pts[f], hv)
+        hand_mask = np.array([bool(hv[i] and hv[j]) for i, j in HAND_CONNECTIONS])
+        hand_conn = [c for c, m in zip(HAND_CONNECTIONS, hand_mask) if m]
+        set_lineset(hand_ls, hand_pts[f], hand_conn, HAND_BONE_COLORS[hand_mask])
+
+        # 右腕
+        av = arm_valid[f]
+        arm_joints.update(arm_pts[f], av)
+        arm_mask = np.array([bool(av[a] and av[b]) for a, b in ARM_CONNECTIONS])
+        arm_conn = [c for c, m in zip(ARM_CONNECTIONS, arm_mask) if m]
+        set_lineset(arm_ls, arm_pts[f], arm_conn, ARM_BONE_COLORS[arm_mask])
+
+        for geo in geometries:
+            vis.update_geometry(geo)
         if not vis.poll_events():
             running = False
             break
         vis.update_renderer()
-        time.sleep(0.001)
-    if not running:
-        break
 
-    # 手指：有効点のみ表示，骨格線は両端が有効なもののみ
-    hv = hand_valid[f]
-    hand_joints.update(hand_pts[f], hv)
-    hand_mask = np.array([bool(hv[i] and hv[j]) for i, j in HAND_CONNECTIONS])
-    hand_conn = [c for c, m in zip(HAND_CONNECTIONS, hand_mask) if m]
-    set_lineset(hand_ls, hand_pts[f], hand_conn, HAND_BONE_COLORS[hand_mask])
+        # 2D：元のRGB画像に関節を重畳
+        bg = player.read(rel_ms) if player is not None else None
+        img = bg.copy() if bg is not None else np.zeros((IMG_H, IMG_W, 3), dtype=np.uint8)
+        draw_skeleton_2d(img, hand_pts[f], hv, HAND_CONNECTIONS,
+                         HAND_BONE_BGR, HAND_POINT_BGR, DOT_HAND)
+        draw_skeleton_2d(img, arm_pts[f], av, ARM_CONNECTIONS,
+                         ARM_BONE_BGR, ARM_POINT_BGR, DOT_ARM)
+        cv2.putText(img, f"frame {f + 1}/{n_frames}", (10, 25),
+                    cv2.FONT_HERSHEY_SIMPLEX, 0.6, (255, 255, 255), 2)
+        cv2.imshow(WINDOW_2D, img)
+        if cv2.waitKey(1) & 0xFF == ord('q'):
+            running = False
+            break
 
-    # 右腕
-    av = arm_valid[f]
-    arm_joints.update(arm_pts[f], av)
-    arm_mask = np.array([bool(av[a] and av[b]) for a, b in ARM_CONNECTIONS])
-    arm_conn = [c for c, m in zip(ARM_CONNECTIONS, arm_mask) if m]
-    set_lineset(arm_ls, arm_pts[f], arm_conn, ARM_BONE_COLORS[arm_mask])
-
-    for geo in geometries:
-        vis.update_geometry(geo)
-    if not vis.poll_events():
-        break
-    vis.update_renderer()
-
+if player is not None:
+    player.close()
+cv2.destroyAllWindows()
 vis.destroy_window()
 print("[DONE]")
