@@ -8,7 +8,8 @@ import cv2
 import pyrealsense2 as rs
 
 RECORDINGS_DIR = Path(__file__).parent.parent / "recordings"
-FILEPATH = None   # None なら recordings/ 内の最新 session.db3 を自動選択
+# FILEPATH = None   # None なら recordings/ 内の最新 session.db3 を自動選択
+FILEPATH = "recordings/rec_20260831_145130/session.db3"
 DEPTH_VIS_ALPHA = 0.03   # z16 -> 8bit 圧縮係数
 
 

@@ -1,6 +1,8 @@
 .venv/
-recordings/
 models/
 
 __pycache__/
 *.pyc
+
+# RealSense 録画（巨大）— ローカルに残し Git には rgb/ のみ載せる
+recordings/**/session.db3

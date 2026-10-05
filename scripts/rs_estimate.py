@@ -17,19 +17,18 @@ from mediapipe.tasks.python.vision.core import vision_task_running_mode as runni
 
 # ── 入出力 ────────────────────────────────────────
 RECORDINGS_DIR = Path(__file__).parent.parent / "recordings"
-FILEPATH = None   # None なら recordings/ 内の最新 session.db3 を自動選択
+FILEPATH = None
 
 
 def resolve_filepath(filepath, name="session.db3"):
-    """filepath が None なら recordings/*/name のうち最も新しいものを返す．"""
     if filepath is not None:
         p = Path(filepath)
         if not p.exists():
-            raise FileNotFoundError(f"指定されたファイルがありません: {p}")
+            raise FileNotFoundError(f"No file: {p}")
         return p
     cands = list(RECORDINGS_DIR.glob(f"*/{name}"))
     if not cands:
-        raise FileNotFoundError(f"{RECORDINGS_DIR}/*/{name} が見つかりません")
+        raise FileNotFoundError(f"{RECORDINGS_DIR}/*/{name} is not found")
     return max(cands, key=lambda p: p.stat().st_mtime)
 
 
