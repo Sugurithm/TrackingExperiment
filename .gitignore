@@ -6,9 +6,11 @@ __pycache__/
 
 # RealSense 録画（巨大）— ローカルに残し Git には rgb/ のみ載せる
 recordings/**/session.db3
-recordings/**/rgb/
 recordings/verify/
 recordings/calib**/
-recordings/trial**/
-
-!recordings/trial**/rgb/
+# trial 配下は rgb/ のみ Git 対象（session.db3 は上の **/session.db3 でも除外）
+recordings/trial_*/
+!recordings/trial_*/
+recordings/trial_*/**
+!recordings/trial_*/rgb/
+!recordings/trial_*/rgb/**
