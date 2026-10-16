@@ -11,8 +11,17 @@
 #   3. RealSense の検出が途切れる所で区間に分ける（開始付近と終了付近で 2 区間になる想定）
 #   4. 区間ごとに
 #        粗い探索: ボード中心の「速さ」の相関が最大になる δ（回転に依らないので T_MC 不要）
-#        細かい探索: マーカー 3 点の 3 次元位置の差（RMS）が最小になる δ（1 ms 刻み → 放物線補間）
+#        細かい探索: マーカー 3 点の「視線に垂直な方向」の位置の差が最小になる δ（1 ms 刻み → 放物線補間）
 #   5. 区間ごとの δ，残差，δ の差（記録中のずれ）を表示・保存
+#
+# 2026-10-16 の変更（trial_20261015_193957 の解析から）
+#   - ボードの向き（180° の取り違え）: 旧版は 1 点の明るさを固定のしきい値 128 で見ていたが，
+#     露出が暗いと紙の白が 127 前後になり 2 割のフレームで向きを誤っていた．
+#     全 40 マスの「白のはずのマス − 黒のはずのマス」の明るさの差で決める（露出に依らない）．
+#     差がはっきりしないフレームだけ，隣のフレームから向きを引き継ぐ．
+#   - δ は視線に垂直な誤差だけで決める．ボード 1 枚の PnP では奥行きが「見かけの大きさ」から決まるため
+#     弱く（1 px の大きさの誤差が 1.3 m 先で約 2 cm），ブレやローリングシャッターで系統的にずれる．
+#     奥行きの誤差は時刻とは無関係なので別に報告する（sync_frames.csv の err_ray_mm）．
 #
 # 使い方（TrackingExperiment のルートで）
 #   python sync_check.py --rs recordings/trial_20261015_201500 --csv recordings/Take_xxx.csv \
@@ -22,8 +31,10 @@
 #   2 回目以降はボード検出結果（sync_check/rs_board.npz）を再利用する．やり直すときは --redetect
 #
 # 出力（--rs のフォルダ /sync_check/）
+#   rs_board.npz     : ボード検出結果（向きを決める前の生の値．再実行時に再利用）
 #   sync_result.json : 区間ごとの δ・残差など
-#   sync_check.png   : 相関・残差の曲線と，合わせた後の軌跡の重ね描き
+#   sync_frames.csv  : フレームごとの誤差（視線に垂直 / 視線方向 / 3 次元，速さ，距離，向きなど）
+#   sync_check.png   : 相関・残差の曲線，合わせた後の軌跡の重ね描き，奥行き方向の差と距離の関係
 # ─────────────────────────────────────────────────────────────────────────────
 import argparse
 import csv
@@ -62,6 +73,11 @@ SMOOTH = 0.05                   # 速さの平滑化の窓 [s]
 FINE_RANGE = 0.15               # 細かい探索の範囲 ±[s]
 FINE_STEP = 0.001               # 細かい探索の刻み [s]
 COARSE_STRIDE = 6               # ボードの写っている時間帯を探すときの間引き（検出を速くするため）
+KEEP = 0.9                      # 細かい探索では誤差の小さい方から 90% のフレームで評価する
+OUTLIER_MM = 30.0               # これ以上の誤差のフレームは「外れ」として数える [mm]
+SPEED_BINS = [(0, 100), (100, 300), (300, 600), (600, 1e9)]   # 誤差を速さ別に集計する区切り [mm/s]
+MAX_LINK = 0.1                  # この時間以内の隣り合う検出は「ボードの向きがつながっている」とみなす [s]
+SCORE_MIN = 0.3                 # 明るさのスコアが記録全体の典型値のこの割合未満なら，向きは隣のフレームから引き継ぐ
 NEXT_SEARCH = 2.0               # 2 つ目以降の区間は，最も確からしい区間の δ ±この範囲で探す [s]
 
 OBJ = np.array([[j * SQUARE, i * SQUARE, 0] for i in range(PATTERN[1]) for j in range(PATTERN[0])], np.float32)
@@ -72,28 +88,73 @@ D12, D13, D23 = (np.linalg.norm(PB[b] - PB[a]) for a, b in [(0, 1), (0, 2), (1, 
 # ════════════════════════════════════════════════════════════════════════════
 #  RealSense: ボード検出
 # ════════════════════════════════════════════════════════════════════════════
+# 8×5 マスの中心（ボード座標）と色．原点側の角のマスが黒，(i+j) が奇数のマスが白．
+_SQ_IJ = [(i, j) for i in range(PATTERN[0] + 1) for j in range(PATTERN[1] + 1)]
+SQ_CENTERS = np.array([[(i - 0.5) * SQUARE, (j - 0.5) * SQUARE, 0.] for i, j in _SQ_IJ])
+SQ_WHITE = np.array([(i + j) % 2 == 1 for i, j in _SQ_IJ])
+FLIP = np.diag([-1., -1., 1.])                       # ボード面内で 180° 回す
+FLIP_T = np.array([(PATTERN[0] - 1) * SQUARE, (PATTERN[1] - 1) * SQUARE, 0.])
+
+
+def flip_pose(R, t):
+    """ボードを面内で 180° 回した（コーナー順を逆にした）姿勢．"""
+    return R @ FLIP, t + R @ FLIP_T
+
+
 def detect_board(gray, K, D):
-    """チェッカーボードを検出して (R, t, 再投影誤差) を返す．realsense_transfer.py と同じ手順．"""
+    """チェッカーボードを検出して (R, t, 再投影誤差, 向きのスコア) を返す．
+
+    7×4 の内部コーナーは 180° 回しても同じ格子になるので，検出器が返すコーナー順は
+    フレームごとに逆になりうる．ここでは向きを決めず，全 40 マスの明るさから
+    「白のはずのマスの平均 − 黒のはずのマスの平均」をスコアとして返す
+    （正しい向きなら正，逆なら負．1 点の明るさを固定のしきい値で見るよりブレ・露出に強い）．
+    向きは load_rs() で前後のフレームとのつながりも使って決める．"""
     ok, c = cv2.findChessboardCornersSB(gray, PATTERN, flags=cv2.CALIB_CB_ACCURACY)
     if not ok:
         return None
-
-    def pnp(c):
-        _, r, t = cv2.solvePnP(OBJ, c, K, D, flags=cv2.SOLVEPNP_IPPE)
-        return cv2.solvePnPRefineLM(OBJ, c, K, D, r, t)
-
-    r, t = pnp(c)
-    u, v = cv2.projectPoints(np.array([[-SQUARE / 2, -SQUARE / 2, 0.]]), r, t, K, D)[0].ravel().astype(int)
-    h, w = gray.shape
-    if 3 <= u < w - 3 and 3 <= v < h - 3 and gray[v - 3:v + 4, u - 3:u + 4].mean() >= 128:
-        c = c[::-1].copy()                 # 左上マスが白なら向きが逆
-        r, t = pnp(c)
+    _, r, t = cv2.solvePnP(OBJ, c, K, D, flags=cv2.SOLVEPNP_IPPE)
+    r, t = cv2.solvePnPRefineLM(OBJ, c, K, D, r, t)
     R = cv2.Rodrigues(r)[0]
     proj = cv2.projectPoints(OBJ, r, t, K, D)[0].reshape(-1, 2)
     err = float(np.linalg.norm(proj - c.reshape(-1, 2), axis=1).mean())
     if R[2, 2] <= 0 or err > MAX_ERR_PX:
         return None
-    return R, t.ravel(), err
+
+    uv = cv2.projectPoints(SQ_CENTERS, r, t, K, D)[0].reshape(-1, 2)
+    h, w = gray.shape
+    half = max(1, int(0.15 * np.median(np.linalg.norm(np.diff(proj[:PATTERN[0]], axis=0), axis=1))))
+    vals = np.full(len(uv), np.nan)
+    for k, (u, v) in enumerate(np.round(uv).astype(int)):
+        if half <= u < w - half and half <= v < h - half:
+            vals[k] = gray[v - half:v + half + 1, u - half:u + half + 1].mean()
+    score = float(np.nanmean(vals[SQ_WHITE]) - np.nanmean(vals[~SQ_WHITE]))
+    return R, t.ravel(), err, score
+
+
+def orient(t, R, tvec, score):
+    """各フレームの向き（そのまま / 180° 回す）を決める．
+
+    1. 明るさのスコアがはっきりしている（|score| が記録全体の典型値の SCORE_MIN 倍以上）フレームは，
+       スコアの符号だけで決める．白と黒の「差」を見ているので露出に依らない．
+    2. はっきりしないフレーム（ブレ・反射・画面端など）は，MAX_LINK 秒以内で最も近い
+       「はっきりしたフレーム」から，ボードの x 軸が急に反転しない（物理的にありえない）ように向きを引き継ぐ．
+    3. どちらでも決まらないフレームは使わない（sign = 0）．
+    向きの判定は 1 フレームずつ独立に行うので，1 か所の判定ミスがほかのフレームに広がらない．"""
+    a = np.abs(score)
+    typical = np.nanmedian(a) if np.isfinite(a).any() else np.nan
+    sure = np.isfinite(score) & (a >= SCORE_MIN * typical)
+    sign = np.where(sure, np.sign(score), 0.0)
+    xs = R[:, :, 0]                                       # 検出器の順番どおりの x 軸
+    for k in np.where(~sure)[0]:
+        cand = np.where(sure & (np.abs(t - t[k]) <= MAX_LINK))[0]
+        if len(cand) == 0:
+            continue
+        j = cand[np.argmin(np.abs(t[cand] - t[k]))]
+        sign[k] = sign[j] * (1.0 if xs[j] @ xs[k] >= 0 else -1.0)
+    R2, t2 = R.copy(), tvec.copy()
+    for k in np.where(sign < 0)[0]:
+        R2[k], t2[k] = flip_pose(R[k], tvec[k])
+    return R2, t2, sign, int((~sure).sum())
 
 
 def frames_from_db3(path):
@@ -144,8 +205,11 @@ def frames_from_jpg(folder):
 def load_rs(rs_path, cache, redetect, stride):
     if cache.exists() and not redetect:
         z = np.load(cache, allow_pickle=False)
-        print(f"[RS] 検出結果を再利用: {cache}（やり直すときは --redetect）")
-        return dict(t=z["t"], R=z["R"], tvec=z["tvec"], err=z["err"], epoch=bool(z["epoch"]), n_all=int(z["n_all"]))
+        if "score" in z:
+            print(f"[RS] 検出結果を再利用: {cache}（やり直すときは --redetect）")
+            return finish_rs(dict(t=z["t"], R=z["R"], tvec=z["tvec"], err=z["err"], score=z["score"],
+                                  epoch=bool(z["epoch"]), n_all=int(z["n_all"])))
+        print("[RS] 古い形式の検出結果なので検出し直します")
 
     p = Path(rs_path)
     if p.is_dir() and (p / "session.db3").exists():
@@ -187,15 +251,30 @@ def load_rs(rs_path, cache, redetect, stride):
     R = [hits[k][1] for k in order]
     tvec = [hits[k][2] for k in order]
     err = [hits[k][3] for k in order]
+    score = [hits[k][4] for k in order]
     epoch = bool(domains) and domains <= {"system_time", "global_time"} and (not t or t[0] > 1e9)
     if not epoch:
         print(f"[WARN] タイムスタンプが PC 時刻ではありません（{domains}）．δ の粗い範囲は Take 全体から探します．")
     out = dict(t=np.array(t), R=np.array(R).reshape(-1, 3, 3), tvec=np.array(tvec).reshape(-1, 3),
-               err=np.array(err), epoch=epoch, n_all=n)
+               err=np.array(err), score=np.array(score), epoch=epoch, n_all=n)
     cache.parent.mkdir(parents=True, exist_ok=True)
-    np.savez(cache, **out)
+    np.savez(cache, **out)                         # 向きを決める前の生の検出結果を保存する
     print(f"[RS] {n} frames, ボード検出 {len(t)} frames")
-    return out
+    return finish_rs(out)
+
+
+def finish_rs(d):
+    """向きを決めて R, tvec を置き換える．"""
+    if len(d["t"]) == 0:
+        d["sign"] = np.zeros(0)
+        return d
+    d["R"], d["tvec"], d["sign"], n_unsure = orient(d["t"], d["R"], d["tvec"], d["score"])
+    print(f"[RS] 向き: 検出器の順番が逆だったフレーム {int(np.sum(d['sign'] < 0))} / {len(d['t'])}，"
+          f"明るさでは決めきれず隣から引き継いだフレーム {n_unsure}，決まらず除外 {int(np.sum(d['sign'] == 0))}")
+    keep = d["sign"] != 0
+    for k in ("t", "R", "tvec", "err", "score", "sign"):
+        d[k] = d[k][keep]
+    return d
 
 
 # ════════════════════════════════════════════════════════════════════════════
@@ -368,24 +447,26 @@ def sync_segment(idx, rs, mc, T_MC, c_range):
     far = np.abs(lags - c0) > 0.5
     second = np.nanmax(corr[far]) if np.any(far & np.isfinite(corr)) else np.nan
 
-    # ── 細かい探索：3 次元位置の RMS ──
+    # ── 細かい探索：視線に垂直な方向の位置の差（外れ値に強い評価）──
+    #    ボード 1 枚からの姿勢推定（PnP）では，奥行きは「見かけの大きさ」から決まるため誤差が大きく
+    #    （1 px の大きさの誤差が 1.3 m 先で約 2 cm），ブレやローリングシャッターでも系統的にずれる．
+    #    時刻のずれは画像上の動き（視線に垂直な成分）に正確に現れるので，そちらだけで δ を決める．
     cs = np.arange(c0 - FINE_RANGE, c0 + FINE_RANGE + FINE_STEP / 2, FINE_STEP)
-    rms = np.full(len(cs), np.nan)
+    cost = np.full(len(cs), np.nan)
     gap = 2.5 / mc["fps"]
     for k, c in enumerate(cs):
         Q = interp_nan(t_rs + c, tm, mc["S"], gap)          # (n, 3, 3) Motive 座標
         m = np.isfinite(Q[:, 0, 0])
         if m.sum() < 10:
             continue
-        A, B = P_cam[m].reshape(-1, 3), Q[m].reshape(-1, 3)
-        T = T_MC if T_MC is not None else kabsch(A, B)
-        rms[k] = np.sqrt(np.mean(np.sum((apply(T, A) - B) ** 2, axis=1)))
-    if np.all(np.isnan(rms)):
+        T = T_MC if T_MC is not None else robust_kabsch(P_cam[m], Q[m])
+        cost[k] = trimmed_rms(split_ray(P_cam[m], Q[m], T)[0])
+    if np.all(np.isnan(cost)):
         return None
-    kf = int(np.nanargmin(rms))
+    kf = int(np.nanargmin(cost))
     c1 = cs[kf]
-    if 0 < kf < len(cs) - 1 and np.all(np.isfinite(rms[kf - 1:kf + 2])):
-        y0, y1, y2 = rms[kf - 1:kf + 2] ** 2                   # 二乗誤差に放物線を当てる
+    if 0 < kf < len(cs) - 1 and np.all(np.isfinite(cost[kf - 1:kf + 2])):
+        y0, y1, y2 = cost[kf - 1:kf + 2] ** 2                  # 二乗誤差に放物線を当てる
         den = y0 - 2 * y1 + y2
         if den > 0:
             c1 += 0.5 * (y0 - y2) / den * FINE_STEP
@@ -394,19 +475,105 @@ def sync_segment(idx, rs, mc, T_MC, c_range):
     # ── 最良の c での残差 ──
     Q = interp_nan(t_rs + c1, tm, mc["S"], gap)
     m = np.isfinite(Q[:, 0, 0])
-    T = T_MC if T_MC is not None else kabsch(P_cam[m].reshape(-1, 3), Q[m].reshape(-1, 3))
+    T = T_MC if T_MC is not None else robust_kabsch(P_cam[m], Q[m])
     P_m = apply(T, P_cam.reshape(-1, 3)).reshape(P_cam.shape)
-    e = np.linalg.norm(P_m - Q, axis=2)[m]                    # (n_ok, 3)
-    bias = np.nanmean((P_m - Q)[m].reshape(-1, 3), axis=0)
+    e_all = np.linalg.norm(P_m - Q, axis=2).mean(1)            # 3 次元の誤差（3 点の平均）
+    e_lat, e_ray, d_lat = split_ray(P_cam, Q, T)               # 視線に垂直な誤差 / 視線方向の誤差（正 = RS が遠い）
+    e = e_lat[m]
+    depth = np.linalg.norm(P_cam.mean(1), axis=1)              # カメラからの距離 [mm]
+
+    # ── 視線に垂直な誤差を「動きの方向」と「それ以外」に分ける（時刻のずれなら動きの方向に出る）──
+    R_CM = np.linalg.inv(T)[:3, :3]
+    vm = np.gradient(interp_nan(gm, tm, mc["S"].mean(1), 0.05), gm, axis=0)
+    vel = interp_nan(t_rs + c1, gm, vm, 0.05) @ R_CM.T         # カメラ座標の速度
+    ray = P_cam.mean(1) / depth[:, None]
+    vel_lat = vel - np.einsum("ij,ij->i", vel, ray)[:, None] * ray
+    spd = np.linalg.norm(vel, axis=1)
+    spd_lat = np.linalg.norm(vel_lat, axis=1)
+    u = vel_lat / np.where(spd_lat > 1e-9, spd_lat, np.nan)[:, None]
+    along = np.einsum("ij,ij->i", d_lat, u)                    # 正 = RealSense が先行
+    perp = np.linalg.norm(d_lat - along[:, None] * u, axis=1)
+    ok = m & np.isfinite(along) & (e_lat < OUTLIER_MM)
+    lag_ms = np.nan
+    if ok.sum() > 20 and np.ptp(spd_lat[ok]) > 0:
+        lag_ms = float(np.polyfit(spd_lat[ok], along[ok], 1)[0] * 1000)   # 残った時間ずれ [ms]
+    # 区間の中で「時間ずれ」が時刻とともに増えていくか（タイムスタンプの欠落・取り違えの目安）
+    fast = ok & (spd_lat > 200)
+    trend = np.nan
+    if fast.sum() > 20 and np.ptp(t_rs[fast]) > 1:
+        trend = float(np.polyfit(t_rs[fast] - t_rs[0], along[fast] / spd_lat[fast] * 1000, 1)[0])
+    bins = []
+    for lo, hi in SPEED_BINS:
+        mm = m & (spd >= lo) & (spd < hi)
+        bins.append(dict(lo=lo, hi=hi, n=int(mm.sum()),
+                         median_mm=float(np.median(e_lat[mm])) if mm.any() else None,
+                         ray_median_abs_mm=float(np.median(np.abs(e_ray[mm]))) if mm.any() else None))
+    # 視線方向の誤差が距離とともに増えるか（PnP の奥行きの弱さ．時刻のずれとは無関係）
+    okr = m & np.isfinite(e_ray) & (np.abs(e_ray) < 100)
+    ray_slope = float(np.polyfit(depth[okr], e_ray[okr], 1)[0] * 1000) if okr.sum() > 20 and np.ptp(depth[okr]) > 100 else np.nan
     path = float(np.nansum(np.linalg.norm(np.diff(cen, axis=0), axis=1)))
 
+    frames = pd.DataFrame(dict(
+        t_rs=t_rs, take_time=t_rs + c1, speed_mm_s=spd, depth_mm=depth,
+        err_lateral_mm=e_lat, err_ray_mm=e_ray, err_3d_mm=e_all, err_along_mm=along, err_perp_mm=perp,
+        flipped=rs["sign"][idx] < 0, score=rs["score"][idx], reproj_px=rs["err"][idx],
+        rs_x=P_m.mean(1)[:, 0], rs_y=P_m.mean(1)[:, 1], rs_z=P_m.mean(1)[:, 2],
+        mc_x=Q.mean(1)[:, 0], mc_y=Q.mean(1)[:, 1], mc_z=Q.mean(1)[:, 2]))
+
     return dict(c_coarse=float(c0), c=float(c1), corr=float(corr[kb]), corr_second=float(second),
-                rms_mm=float(np.sqrt(np.mean(e ** 2))), median_mm=float(np.median(e)),
-                p95_mm=float(np.percentile(e, 95)), bias_mm=bias.tolist(),
-                n_rs=int(len(idx)), n_used=int(m.sum()), path_mm=path, at_edge=bool(at_edge),
-                rs_t0=float(t_rs[0]), rs_t1=float(t_rs[-1]),
-                _plot=dict(lags=lags, corr=corr, cs=cs, rms=rms, t_rs=t_rs, P_m=P_m, Q=Q,
-                           tm=tm, S=mc["S"]))
+                rms_mm=float(np.sqrt(np.mean(e ** 2))), trimmed_rms_mm=float(trimmed_rms(e)),
+                median_mm=float(np.median(e)), p95_mm=float(np.percentile(e, 95)),
+                outlier_frac=float(np.mean(e >= OUTLIER_MM)),
+                ray_mean_mm=float(np.nanmean(e_ray[okr])) if okr.any() else None,
+                ray_sd_mm=float(np.nanstd(e_ray[okr])) if okr.any() else None,
+                ray_slope_mm_per_m=ray_slope,
+                median_3d_mm=float(np.median(e_all[m])),
+                depth_range_mm=[float(np.nanmin(depth)), float(np.nanmax(depth))],
+                bias_mm=np.nanmean((P_m - Q).mean(1)[m], axis=0).tolist(),
+                along_mean_mm=float(np.nanmean(along[ok])) if ok.any() else None,
+                along_sd_mm=float(np.nanstd(along[ok])) if ok.any() else None,
+                perp_median_mm=float(np.nanmedian(perp[ok])) if ok.any() else None,
+                lag_vs_speed_ms=lag_ms, lag_trend_ms_per_s=trend, speed_bins=bins,
+                n_rs=int(len(idx)), n_used=int(m.sum()), n_flipped=int(np.sum(rs["sign"][idx] < 0)),
+                path_mm=path, at_edge=bool(at_edge), rs_t0=float(t_rs[0]), rs_t1=float(t_rs[-1]),
+                T_fit=None if T_MC is not None else T.tolist(),
+                _frames=frames,
+                _plot=dict(lags=lags, corr=corr, cs=cs, rms=cost, t_rs=t_rs, P_m=P_m, Q=Q,
+                           tm=tm, S=mc["S"], spd=spd, e=e_lat, ray=e_ray, depth=depth))
+
+
+def split_ray(P_cam, Q, T):
+    """誤差を視線方向とそれに垂直な方向に分ける．
+    P_cam: RealSense のマーカー（カメラ座標, n×3×3），Q: MoCap のマーカー（Motive 座標），T: カメラ→Motive．
+    返り値: 垂直方向の誤差 [mm]（3 点の平均, n），視線方向の誤差 [mm]（正 = RS が遠い, n），
+            垂直方向の差ベクトル（カメラ座標, 3 点の平均, n×3）"""
+    Q_cam = apply(np.linalg.inv(T), Q.reshape(-1, 3)).reshape(Q.shape)
+    D = P_cam - Q_cam
+    u = Q_cam / np.linalg.norm(Q_cam, axis=2, keepdims=True)
+    along = np.einsum("nkj,nkj->nk", D, u)
+    lat = D - along[..., None] * u
+    return np.linalg.norm(lat, axis=2).mean(1), along.mean(1), lat.mean(1)
+
+
+def frame_err(P, Q, T):
+    """フレームごとの誤差 [mm]（3 点の距離の平均）"""
+    return np.linalg.norm(apply(T, P.reshape(-1, 3)).reshape(P.shape) - Q, axis=2).mean(1)
+
+
+def trimmed_rms(e):
+    """大きい方から (1−KEEP) を除いた RMS．検出ミスなど少数の外れ値に引っ張られないようにする．"""
+    e = np.sort(e[np.isfinite(e)])
+    return np.sqrt(np.mean(e[:max(1, int(np.ceil(KEEP * len(e))))] ** 2))
+
+
+def robust_kabsch(P, Q):
+    """外れ値の多いフレームを除きながら剛体変換を当てはめる（T_MC を使わないとき）．"""
+    keep = np.ones(len(P), bool)
+    for _ in range(3):
+        T = kabsch(P[keep].reshape(-1, 3), Q[keep].reshape(-1, 3))
+        e = frame_err(P, Q, T)
+        keep = e <= np.quantile(e, KEEP)
+    return T
 
 
 def load_tmc(path):
@@ -513,9 +680,22 @@ def main():
         print(f"[区間 {k}] 記録の {rel:5.1f}–{r['rs_t1'] - rs['t'][0]:5.1f} s  {d}  "
               f"（Take の {r['rs_t0'] + r['c']:.2f} s〜）")
         print(f"          速さの相関 {r['corr']:.3f}（次点 {r['corr_second']:.3f}）  "
-              f"位置の残差 RMS {r['rms_mm']:.2f} mm（中央値 {r['median_mm']:.2f}, 95% {r['p95_mm']:.2f}）  "
-              f"使用 {r['n_used']}/{r['n_rs']} frames  移動 {r['path_mm']:.0f} mm")
-        print(f"          平均のずれ（Motive 座標）{np.round(r['bias_mm'], 2)} mm")
+              f"使用 {r['n_used']}/{r['n_rs']} frames（うち向きを直したもの {r['n_flipped']}）  移動 {r['path_mm']:.0f} mm")
+        print(f"          視線に垂直な差（δ の推定に使用）: 中央値 {r['median_mm']:.1f} mm  上位10%除く RMS {r['trimmed_rms_mm']:.1f} mm  "
+              f"95% {r['p95_mm']:.1f} mm  {OUTLIER_MM:.0f} mm 以上 {100 * r['outlier_frac']:.1f}%")
+        print(f"          視線方向（奥行き）の差: 平均 {r['ray_mean_mm']:+.1f} mm  ばらつき {r['ray_sd_mm']:.1f} mm  "
+              f"距離 1 m あたり {r['ray_slope_mm_per_m']:+.1f} mm（距離 {r['depth_range_mm'][0]:.0f}–{r['depth_range_mm'][1]:.0f} mm）"
+              f"   参考: 3 次元の差の中央値 {r['median_3d_mm']:.1f} mm")
+        sb = "  ".join(f"{b['lo']:.0f}–{b['hi'] if b['hi'] < 1e8 else '':}: {b['median_mm']:.1f} / {b['ray_median_abs_mm']:.1f} mm ({b['n']})"
+                       for b in r["speed_bins"] if b["median_mm"] is not None)
+        print(f"          速さ別の中央値 [mm/s]（垂直 / 奥行き）  {sb}")
+        if r["along_mean_mm"] is not None:
+            print(f"          垂直な差のうち動きの方向 平均 {r['along_mean_mm']:+.1f} mm（ばらつき {r['along_sd_mm']:.1f}）  "
+                  f"それ以外 中央値 {r['perp_median_mm']:.1f} mm  "
+                  f"速さに比例する分 {r['lag_vs_speed_ms']:+.1f} ms  区間内の時間ずれの変化 {r['lag_trend_ms_per_s']:+.1f} ms/s")
+            if abs(np.nan_to_num(r["lag_trend_ms_per_s"])) > 5:
+                print("          [WARN] 区間の中で時間ずれが増えていきます．フレームの欠落やタイムスタンプを確認してください．")
+        print(f"          平均のずれ（Motive 座標）{np.round(r['bias_mm'], 1)} mm")
         if r["anchor"] and r["corr"] - np.nan_to_num(r["corr_second"]) < 0.15:
             print("          [WARN] 相関のピークがはっきりしません．ボードをもっと不規則に大きく動かしてください．")
         if r["at_edge"]:
@@ -535,10 +715,12 @@ def main():
     if len(results) >= 2:
         save["drift_ms"] = (results[-1]["c"] - results[0]["c"]) * 1000
     (out / "sync_result.json").write_text(json.dumps(save, indent=2, ensure_ascii=False), encoding="utf-8")
+    pd.concat([r["_frames"].assign(segment=k) for k, r in enumerate(results)]).to_csv(
+        out / "sync_frames.csv", index=False, float_format="%.4f")
 
     # ── 図 ──
     n = len(results)
-    fig, ax = plt.subplots(n, 3, figsize=(17, 4 * n), squeeze=False)
+    fig, ax = plt.subplots(n, 4, figsize=(22, 4 * n), squeeze=False)
     for k, r in enumerate(results):
         p = r["_plot"]
         off = start if rs["epoch"] else 0.0
@@ -550,8 +732,8 @@ def main():
         ax[k, 1].plot((p["cs"] - r["c"]) * 1000, p["rms"], lw=1)
         ax[k, 1].axvline(0, color="r", lw=0.8)
         ax[k, 1].set_xlabel("最良値からのずれ [ms]")
-        ax[k, 1].set_ylabel("位置の RMS [mm]")
-        ax[k, 1].set_title(f"細かい探索: 最小 {r['rms_mm']:.2f} mm")
+        ax[k, 1].set_ylabel("視線に垂直な差 [mm]（上位10%除く RMS）")
+        ax[k, 1].set_title(f"細かい探索: 最小 {r['trimmed_rms_mm']:.1f} mm")
         tt = p["t_rs"] + r["c"]
         sel = (p["tm"] >= tt[0] - 1) & (p["tm"] <= tt[-1] + 1)
         with np.errstate(all="ignore"):
@@ -562,6 +744,16 @@ def main():
         ax[k, 2].set_xlabel("Take 時刻 [s]")
         ax[k, 2].set_ylabel("ボード中心 X/Y/Z [mm]")
         ax[k, 2].set_title("合わせた後（線: MoCap，点: RealSense）")
+        sc4 = ax[k, 3].scatter(p["depth"], p["ray"], c=p["spd"], s=5, cmap="viridis", vmin=0, vmax=800)
+        ax[k, 3].scatter(p["depth"], p["e"], s=4, color="tab:red", label="視線に垂直な差")
+        ax[k, 3].axhline(0, color="k", lw=0.5)
+        lim = max(10, np.nanpercentile(np.abs(p["ray"]), 98) * 1.2)
+        ax[k, 3].set_ylim(-lim, lim)
+        ax[k, 3].set_xlabel("カメラからの距離 [mm]")
+        ax[k, 3].set_ylabel("差 [mm]（点の色 = 速さ mm/s）")
+        ax[k, 3].set_title("奥行き方向の差（正 = RealSense が遠い）")
+        fig.colorbar(sc4, ax=ax[k, 3], fraction=0.04)
+        ax[k, 3].legend(fontsize=8)
     fig.tight_layout()
     fig.savefig(out / "sync_check.png", dpi=110)
     print(f"\nsaved -> {out}")
