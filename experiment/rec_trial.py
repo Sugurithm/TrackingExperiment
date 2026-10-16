@@ -11,6 +11,7 @@ rec_trial.py
 
 保存先（1 試行 = 1 フォルダ）:
   recordings/trial_YYYYMMDD_HHMMSS/session.db3, meta.json
+                                  /mocap/   ← Motive の Take CSV をここに置く（sync_check.py などが読む）
 
 meta.json の時刻（*_epoch_ms）は MoCap との時刻合わせに使う．
 "calib" には後で比較に使う calib_* フォルダ名を書く（比較プログラムが読む）．
@@ -21,14 +22,15 @@ import argparse
 import shutil
 
 import config
-import io_utils
-import rs_device
+from lib import io_utils
+from lib import rs_device
 
 
 def record_trial(subject, trial):
     """1 試行を記録して meta.json を書く．失敗・中断でもデータは残し status で区別する．
     返り値: record() の status"""
     trial_dir = io_utils.new_session_dir(config.TRIAL_PREFIX)
+    (trial_dir / "mocap").mkdir()
     print(f"[REC] {trial_dir.name}  {config.TRIAL_DURATION:.0f} s")
     res = rs_device.record(trial_dir / config.DB3_NAME, config.TRIAL_DURATION)
     res.pop("last_color")                        # 画像は meta.json に書かない
@@ -42,7 +44,7 @@ def record_trial(subject, trial):
                        dict(kind="trial", session=trial_dir.name, subject=subject, trial=trial, calib=None, **res))
 
     if res["status"] == "ok":
-        print(f"[DONE] {trial_dir.name}  {res['frames']} frames")
+        print(f"[DONE] {trial_dir.name}  {res['frames']} frames  （Take CSV は {trial_dir / 'mocap'} へ）")
     else:                                        # 途中までのデータも解析できるよう消さずに残す
         print(f"[ERROR] {trial_dir.name} は途中で止まりました（{res['reason']}）．meta.json の status で区別できます")
     return res["status"]

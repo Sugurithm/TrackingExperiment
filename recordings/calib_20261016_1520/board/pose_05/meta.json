@@ -1,0 +1,33 @@
+{
+  "kind": "board",
+  "pose": "pose_05",
+  "status": "ok",
+  "reason": "",
+  "duration_s": 5.0,
+  "frames": 302,
+  "width": 640,
+  "height": 480,
+  "fps": 60,
+  "color_exposure": null,
+  "rec_start_epoch_ms": 1792131858319,
+  "rec_stop_epoch_ms": 1792131864109,
+  "first_frame_epoch_ms": 1792131858708.0574,
+  "last_frame_epoch_ms": 1792131863310.3103,
+  "color_intrinsics": {
+    "width": 640,
+    "height": 480,
+    "fx": 611.4276123046875,
+    "fy": 609.8572998046875,
+    "ppx": 317.3884582519531,
+    "ppy": 250.92462158203125,
+    "model": "distortion.inverse_brown_conrady",
+    "coeffs": [
+      0.0,
+      0.0,
+      0.0,
+      0.0,
+      0.0
+    ]
+  },
+  "board_found_last_frame": true
+}

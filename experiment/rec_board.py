@@ -26,9 +26,10 @@ import sys
 import cv2
 
 import config
-import io_utils
-import rs_device
-from calib_common import K_D, solve_board
+from lib import io_utils
+from lib import rs_device
+from lib.board import solve_board
+from lib.geometry import K_D
 
 
 # ══════════════════════════════════════════════════

@@ -14,9 +14,7 @@ calib_mocap.py
 ────────────────────────────────────────────────────────────────────
 """
 
-import csv
 import sys
-from itertools import permutations
 
 import numpy as np
 import pandas as pd
@@ -25,63 +23,10 @@ matplotlib.use("Agg")                    # 画面のない環境でも保存だ�
 import matplotlib.pyplot as plt
 
 import config
-import io_utils
-from calib_common import MARKERS_B, make_T
+from lib import io_utils
+from lib.board import D_REF, PAIRS, board_frame, identify_all
+from lib.mocap_io import Take
 
-# 設計上のマーカー間距離（S1S2, S1S3, S2S3）
-PAIRS = [(0, 1), (0, 2), (1, 2)]
-D_REF = [np.linalg.norm(MARKERS_B[b] - MARKERS_B[a]) for a, b in PAIRS]
-
-
-# ══════════════════════════════════════════════════
-#  CSV 読み込み
-# ══════════════════════════════════════════════════
-def find_csv(calib_dir):
-    cands = sorted((calib_dir / "mocap").glob("*.csv"))
-    if len(cands) != 1:                  # 0 個・複数個は取り違えの元なので止める
-        raise SystemExit(f"[ERROR] {calib_dir / 'mocap'} に CSV を 1 つだけ置いてください（現在 {len(cands)} 個）")
-    return cands[0]
-
-
-def load_take(path):
-    """Motive CSV → (meta, 時刻 [s], ラベルなしマーカー位置 [frames × markers × 3] mm)"""
-    with open(path, encoding="utf-8-sig", errors="replace") as f:   # 「午後」などの日本語を含む
-        head = [r for r, _ in zip(csv.reader(f), range(7))]
-    meta = dict(zip(head[0][0::2], head[0][1::2]))
-    types, kinds, axes = head[2], head[5], head[6]
-    cols = [j for j in range(len(types)) if types[j] == "Marker" and kinds[j] == "Position" and axes[j] == "X"]
-    if not cols:                         # 書き出し設定でマーカーが含まれていない
-        raise SystemExit("[ERROR] CSV に Marker の Position 列がありません（Motive の書き出し設定を確認）")
-
-    df = pd.read_csv(path, skiprows=7, header=None, names=range(len(types)), dtype=np.float32)
-    t = df[1].to_numpy()
-    X = df[[j + k for j in cols for k in range(3)]].to_numpy().reshape(len(df), len(cols), 3).astype(float)
-    X *= {"Meters": 1000, "Millimeters": 1}[meta["Length Units"]]
-    return meta, t, X
-
-
-# ══════════════════════════════════════════════════
-#  S1〜S3 の識別とボード座標系
-# ══════════════════════════════════════════════════
-def identify(P):
-    """見えている点から，マーカー間距離が設計値に最も合う 3 点を S1, S2, S3 の順で返す．"""
-    d = np.linalg.norm(P[:, None] - P[None], axis=2)
-    best, cost = None, np.inf
-    for idx in permutations(range(len(P)), 3):
-        e = [abs(d[idx[a], idx[b]] - D) for (a, b), D in zip(PAIRS, D_REF)]
-        if max(e) < config.MC_TOL and sum(e) < cost:
-            best, cost = P[list(idx)], sum(e)
-    return best
-
-
-def board_frame(S1, S2, S3):
-    """S1→S2 を X，S1→S3 を Y（直交化）とする T_MB．"""
-    x = (S2 - S1) / np.linalg.norm(S2 - S1)
-    v = S3 - S1
-    y = v - (v @ x) * x
-    y /= np.linalg.norm(y)
-    R = np.column_stack([x, y, np.cross(x, y)])
-    return make_T(R, S1 - R @ MARKERS_B[0])      # 原点 = 内部コーナー#0
 
 
 # ══════════════════════════════════════════════════
@@ -138,18 +83,14 @@ def save_check_plot(path, t, S, segs):
 # ══════════════════════════════════════════════════
 def main():
     calib_dir = io_utils.resolve_session_dir(sys.argv[1] if len(sys.argv) > 1 else None, config.CALIB_PREFIX)
-    path = find_csv(calib_dir)
+    path = io_utils.find_one(calib_dir / "mocap", "*.csv")
     print(f"[CALIB] {calib_dir}\n[TAKE]  {path.name}")
 
-    meta, t, X = load_take(path)
-    fps = float(meta["Export Frame Rate"])
+    take = Take(path)
+    t, fps, X = take.t, take.fps, take.markers()
     print(f"  {len(t)} frames  {X.shape[1]} markers  {fps:.0f} fps")
 
-    S = np.full((len(t), 3, 3), np.nan)          # 毎フレーム S1, S2, S3 を識別（見つからなければ NaN）
-    for i, x in enumerate(X):
-        P = x[np.isfinite(x[:, 0])]
-        if len(P) >= 3 and (res := identify(P)) is not None:
-            S[i] = res
+    S = identify_all(X)                          # 毎フレーム S1, S2, S3 を識別（見つからなければ NaN）
     print(f"  identified {np.isfinite(S[:, 0, 0]).sum()} / {len(t)} frames")
 
     segs = still_segments(S, t, fps)
@@ -165,7 +106,7 @@ def main():
 
     out = calib_dir / "mocap"
     io_utils.save_json(out / "T_MB.json", dict(
-        take=meta.get("Take Name"), csv=path.name, capture_start=meta.get("Capture Start Time"),
+        take=take.meta.get("Take Name"), csv=path.name, capture_start=take.meta.get("Capture Start Time"),
         print_scale=config.PRINT_SCALE, markers_B=config.MARKERS_B, poses=poses))
     save_check_plot(out / "pose_check.png", t, S, segs)
     print(f"[DONE] {len(poses)} 静止区間 -> {out / 'T_MB.json'}")

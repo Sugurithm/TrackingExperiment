@@ -20,9 +20,10 @@ import numpy as np
 import cv2
 
 import config
-import io_utils
-from calib_common import K_D, MARKERS_B, apply, make_T, mean_R, project, solve_board
-from rs_device import Playback
+from lib import io_utils
+from lib.board import MARKERS_B, solve_board
+from lib.geometry import K_D, apply, make_T, mean_R, project
+from lib.rs_device import Playback
 
 
 # ══════════════════════════════════════════════════

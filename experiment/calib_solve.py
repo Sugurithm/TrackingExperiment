@@ -31,8 +31,9 @@ import pandas as pd
 import cv2
 
 import config
-import io_utils
-from calib_common import MARKERS_B, OBJ, apply, kabsch, project, rot_angle_deg
+from lib import io_utils
+from lib.board import MARKERS_B, OBJ
+from lib.geometry import apply, kabsch, project, rot_angle_deg
 
 ROT_WARN_DEG = 2.0           # 相対回転の不一致がこれを超えたら対応づけを疑う
 SCALE_WARN   = 0.02          # 姿勢間移動距離の比が 1 ± これを外れたら SQUARE / PRINT_SCALE を疑う

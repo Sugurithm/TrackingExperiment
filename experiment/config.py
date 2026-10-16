@@ -16,11 +16,16 @@ TRIAL_PREFIX   = "trial_"   # マウス操作1試行のフォルダ recordings/t
 DB3_NAME       = "session.db3"
 META_NAME      = "meta.json"
 
+MODELS_DIR     = ROOT_DIR / "models"      # MediaPipe のモデル（Git には載せない）
+
 # ── RealSense ストリーム ──────────────────────────
 # 較正と本番で同じ設定にする（T_MC はこのカラー光学座標系に対する変換）
 STREAM_WIDTH  = 640
 STREAM_HEIGHT = 480
 FPS           = 60
+# カラーの露出．None = 自動．数値にすると手動で固定する（単位は RealSense Viewer の Exposure と同じ．
+# Viewer でブレが少なく十分明るい値を確かめてから入れる）．同期・較正・本番で同じ値にすること
+COLOR_EXPOSURE = None
 
 # ── 記録時間 [s] ─────────────────────────────────
 BOARD_DURATION = 5.0    # チェッカーボード 1 姿勢
@@ -57,3 +62,53 @@ MC_MIN_LEN = 5.0    # 静止区間の最短長 [s]
 MC_MERGE   = 3.0    # この時間以内の途切れは同じ姿勢として結合 [s]
 MC_TRIM    = 0.25   # 静止区間の最初と最後を捨てる [s]
 MC_OUTLIER = 3.0    # 中央値からこれ以上離れたフレームを捨てる [mm]
+
+# ── sync_check.py（ボードを振った区間 → 時刻ずれ δ） ──
+SYNC_MAX_ERR_PX   = 1.0     # 再投影誤差の上限 [px]（動いているので較正より緩め）
+SYNC_SEG_GAP      = 2.0     # ボードの検出がこれ以上途切れたら別区間 [s]
+SYNC_SEARCH       = 30.0    # 粗い探索の範囲 ±[s]（2 台の PC の時計のずれ）
+
+# ── rs_joints.py（.db3 → MediaPipe → 関節の 3 次元座標） ──
+POSE_MODEL = MODELS_DIR / "pose_landmarker_heavy.task"
+HAND_MODEL = MODELS_DIR / "hand_landmarker.task"
+POSE_CONFIDENCE = 0.5       # 検出・追跡の信頼度（scripts/rs_estimate.py と同じ）
+HAND_CONFIDENCE = 0.5
+DEPTH_PATCH     = 2         # 関節の画素の周り ±n px の深度の中央値を使う（縁で背景を拾わないように）
+DEPTH_RANGE_MM  = (200, 2500)   # これ以外の深度は無効
+
+# RealSense 側の関節: 名前 → (MediaPipe のモデル, ランドマーク番号)
+#   pose: 12 右肩, 14 右肘, 16 右手首    hand: 0 手首, 5 人差し指付け根, 9 中指付け根
+RS_JOINTS = {
+    "shoulder":   ("pose", 12),
+    "elbow":      ("pose", 14),
+    "wrist":      ("hand", 0),
+    "wrist_pose": ("pose", 16),
+    "mcp3":       ("hand", 9),
+}
+
+# ── mocap_joints.py（Motive CSV → 関節位置） ──────
+# MoCap 側の関節: 名前 → CSV の列名（Name）のリスト．複数なら平均（例: 肘 = 内側・外側上顆の中点）．
+# ラベル付きマーカー名でもスケルトンのボーン名でもよい（ボーンの位置 = 根元側の関節中心）．
+# 実際の列名は  python experiment/mocap_joints.py --list  で確認して書き換える．
+# 2026-10-16 の全身スケルトン（Skeleton 001）: ボーンの位置 = 根元側の関節中心
+#   RUArm = 肩関節中心，RFArm = 肘関節中心，RHand = 手首関節中心
+#   指のマーカーはないので中指付け根（mcp3）は比較しない
+MC_JOINTS = {
+    "shoulder": ["RUArm"],
+    "elbow":    ["RFArm"],
+    "wrist":    ["RHand"],
+}
+
+# ── compare_joints.py（RealSense と MoCap の比較） ──
+# 比較する組: (RealSense 側の名前, MoCap 側の名前)
+COMPARE_PAIRS = [
+    ("shoulder", "shoulder"),
+    ("elbow", "elbow"),
+    ("wrist", "wrist"),
+    ("wrist_pose", "wrist"),
+]
+SEGMENTS       = [("shoulder", "elbow"), ("elbow", "wrist")]   # 長さが一定のはずの区間（上腕・前腕）
+CMP_MAX_GAP    = 0.05       # MoCap の欠損をこれ以上またいで補間しない [s]
+CMP_SYNC_MARGIN = 1.0       # 同期でボードを振った区間の前後これだけは比較に使わない [s]
+CMP_MAX_LAG    = 0.2        # MediaPipe の遅れを探す範囲 ±[s]
+CMP_SPEED_BINS = [0, 100, 300, 600, 1e9]   # 誤差を速さ別に集計する区切り [mm/s]
