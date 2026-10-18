@@ -115,8 +115,9 @@ class _StartFailed(Exception):
     """record() 内で接続失敗を記録ループの後ろへ飛ばすための目印．"""
 
 
-def record(db3_path, duration):
+def record(db3_path, duration, on_start=None):
     """接続 → duration 秒記録 → 切断．結果を dict で返す（meta.json にそのまま書ける）．
+    on_start: 記録が始まった直後に 1 回呼ぶ関数（合図音の再生など）
 
     status: "ok" / "failed"（起動失敗・フレーム途絶） / "interrupted"（Ctrl+C）
     last_color は確認用の最終カラー画像（meta.json には書かない）．
@@ -140,6 +141,8 @@ def record(db3_path, duration):
         res["color_intrinsics"] = intrinsics_to_dict(intr)
         res["rec_start_epoch_ms"] = int(time.time() * 1000)
         t0, timeouts, shown = time.monotonic(), 0, -1
+        if on_start:
+            on_start()
 
         # ── 記録ループ（duration 秒経過で抜ける） ──
         while (elapsed := time.monotonic() - t0) < duration:
