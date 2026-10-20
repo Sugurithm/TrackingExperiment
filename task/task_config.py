@@ -59,7 +59,7 @@ CFG = {
 
 
 def out_root(cfg=CFG):
-    """保存先．out_dir が None ならリポジトリの recordings/（experiment/ がなければ aim_task/sessions/）"""
+    """保存先．out_dir が None ならリポジトリの recordings/（experiment/ がなければ task/sessions/）"""
     if cfg.get("out_dir"):
         return Path(cfg["out_dir"])
     root = Path(__file__).resolve().parent.parent

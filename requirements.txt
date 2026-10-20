@@ -3,3 +3,7 @@ opencv-contrib-python==4.13.0.92
 mediapipe==0.10.35
 pyrealsense2==2.58.1.10581
 open3d==0.19.0
+# task/（2D エイムトラッキング課題）
+pygame==2.6.1
+matplotlib>=3.7
+pandas>=2.0            # experiment/lib/rs_device.py が使う（task/run_experiment.py から読み込む）

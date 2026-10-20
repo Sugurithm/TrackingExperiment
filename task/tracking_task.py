@@ -4,10 +4,10 @@ tracking_task.py
 2D エイムトラッキング課題（カメラなし．課題だけを動かす・練習する・DPI を測るとき）．
 RealSense と一緒に記録するときは run_experiment.py を使う（画面と保存の形は同じ）．
 
-  python aim_task/tracking_task.py P01                  # 静止 → 練習 2 本 → 本番 12 本
-  python aim_task/tracking_task.py P01 --only fast:1    # 1 本だけ（--no-static で静止も飛ばす）
-  python aim_task/tracking_task.py --measure-dpi        # マウスの counts/inch を定規で実測
-  python aim_task/tracking_task.py P99 --simulate --fast --window   # 自動プレイ（動作確認）
+  python task/tracking_task.py P01                  # 静止 → 練習 2 本 → 本番 12 本
+  python task/tracking_task.py P01 --only fast:1    # 1 本だけ（--no-static で静止も飛ばす）
+  python task/tracking_task.py --measure-dpi        # マウスの counts/inch を定規で実測
+  python task/tracking_task.py P99 --simulate --fast --window   # 自動プレイ（動作確認）
 
 マウスは相対モード（カーソルを隠して画面に閉じ込める．Windows では Raw Input）で読み，
 counts → cm（task_config の mouse_dpi）→ 画面の px で動かす．

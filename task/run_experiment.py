@@ -3,8 +3,8 @@ run_experiment.py
 ────────────────────────────────────────────────────────────────────
 2D エイムトラッキング課題 + RealSense の記録（実験協力者の本番用）．
 
-  python aim_task/run_experiment.py P01 --calib calib_20261020_1400
-  python aim_task/run_experiment.py P01 --only fast:1 --no-practice      # 1 本だけ（確認用）
+  python task/run_experiment.py P01 --calib calib_20261020_1400
+  python task/run_experiment.py P01 --only fast:1 --no-practice      # 1 本だけ（確認用）
 
 流れ（1 試行ごと）:
   SPACE → カメラの記録を開始（最初のフレームが届くまで待つ）→ カウントダウン → 課題 →
@@ -13,7 +13,8 @@ run_experiment.py
   - 試行ごとに 1 つの .db3（trial_XX_*/session.db3）．experiment/rec_trial.py と同じく
     1 試行 = 接続 → 記録 → 切断．カメラの設定は experiment/config.py（較正と同じ）．
   - RealSense のフレーム時刻（global_time_enabled）と task.csv の epoch は同じ PC の時計なので，
-    そのまま対応づけられる．ずれの確認は check_sync.py（マウスの速さと手首の速さの相互相関）．
+    同じ時間軸でそのまま対応づけられる．
+    残る小さなずれ（フレーム時刻の変換・露光のタイミング）は，後でマウスの速さと手首の速さを比べて確かめる．
   - 記録の開始に失敗したら画面で R（もう一度）/ S（カメラなしで続ける）を選ぶ．
     記録が途中で止まった・fps が落ちた・課題の全体を覆っていないときは結果の画面に出るので R でやり直す．
   - 練習はカメラを記録しない（task_config の rs_record_practice）．静止の計測は記録する．
