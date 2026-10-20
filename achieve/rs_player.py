@@ -9,7 +9,7 @@ import pyrealsense2 as rs
 
 RECORDINGS_DIR = Path(__file__).parent.parent / "recordings"
 # FILEPATH = None   # None なら recordings/ 内の最新 session.db3 を自動選択
-FILEPATH = "recordings/trial_20261016_160159/session.db3"
+FILEPATH = "recordings/aim_test_20261021_033724/trial_00_static_pre/session.db3"
 DEPTH_VIS_ALPHA = 0.03   # z16 -> 8bit 圧縮係数
 
 
