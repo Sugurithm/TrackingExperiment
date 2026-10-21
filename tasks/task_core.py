@@ -140,6 +140,8 @@ class App:
         self.lang = "ja" if jp else "en"
         self.font = pygame.font.Font(jp, 28) if jp else pygame.font.SysFont(None, 34)
         self.T = TEXT[self.lang]
+        if getattr(args, "dpi", None):
+            self.cfg["mouse_dpi"] = float(args.dpi)      # PC 側で設定した DPI（--dpi）
         self.cm_per_count = 2.54 / self.cfg["mouse_dpi"]
         self.preview_s = self.cfg["preview_s"] if getattr(args, "preview", None) is None else args.preview
         self.setup_scale()
@@ -150,40 +152,50 @@ class App:
 
     # ---------- 感度 ----------
     def setup_scale(self):
-        """マウスの cm → 画面の px の倍率を決め，対応する eDPI・cm/360 を計算する．
+        """マウスのカウント → 画面の px の倍率を決める．
 
-        FPS では 1 カウントで game_yaw_deg × 感度 [deg] 回る．DPI を掛けると 1 cm あたり
-            deg_per_cm = game_yaw_deg × eDPI / 2.54
-        視野角 FOV の透視投影では，画面の中央で 1 deg が px_per_deg = (W/2) / tan(FOV/2) × π/180 [px]．
-        2D の px_per_cm をこの積に揃えると，画面の中央での見え方がその eDPI のゲームと同じになる．
+        sens_mode = "ingame"（既定．感度は PC 側の DPI で変える）:
+            FPS と同じ．1 カウントで game_yaw_deg × game_sens [deg] 回る．
+            画面の中央での 1 deg は px_per_deg = (W/2) / tan(FOV/2) × π/180 [px]．
+            px_per_count = game_yaw_deg × game_sens × px_per_deg   … DPI に依らない（プログラムは DPI を使わない）
+            → PC の DPI を変えると，同じマウスの 1 cm で画面が動く量が変わる（eDPI = DPI × game_sens）．
+            ターゲットの道筋は画面上で固定（amp_cm を画面に収めた大きさ）なので，
+            必要なマウスの移動量 [cm] が DPI に反比例して変わる．
+            task.csv の cm は，宣言した mouse_dpi（--dpi）で換算した「実際のマウスの移動量」．
+        sens_mode = "fit"（動作確認用）:
+            DPI に依らず，マウスの移動量 amp_cm がちょうど画面に収まる倍率にする（DPI を変えても動きは同じ）．
         """
         cfg = self.cfg
         m = cfg["margin_px"]
         fit = min((self.W / 2 - m) / cfg["amp_cm"]["x"], (self.H / 2 - m) / cfg["amp_cm"]["y"])
         px_per_deg = (self.W / 2) / math.tan(math.radians(cfg["game_fov_h_deg"] / 2)) * math.pi / 180
-        yaw = cfg["game_yaw_deg"]
-        if cfg["sens_mode"] == "edpi":
-            deg_per_cm = yaw * cfg["edpi"] / 2.54
-            self.px_per_cm = deg_per_cm * px_per_deg
-            reach_x = (self.W / 2 - m) / self.px_per_cm
-            reach_y = (self.H / 2 - m) / self.px_per_cm
-            if reach_x < cfg["amp_cm"]["x"] or reach_y < cfg["amp_cm"]["y"]:
-                print(f"[SENS][WARN] eDPI {cfg['edpi']:g} では画面に収まる振幅は x ±{reach_x:.1f} cm, "
-                      f"y ±{reach_y:.1f} cm です（設定は x ±{cfg['amp_cm']['x']:g}, y ±{cfg['amp_cm']['y']:g}）．"
-                      f"task_config の amp_cm を小さくしてください")
+        yaw, sens = cfg["game_yaw_deg"], cfg["game_sens"]
+        dpi = cfg["mouse_dpi"]
+        if cfg["sens_mode"] == "ingame":
+            self.px_per_cm = yaw * sens * px_per_deg * dpi / 2.54     # 実際のマウス 1 cm あたりの px
         elif cfg["sens_mode"] == "fit":
             self.px_per_cm = fit
         else:
-            raise SystemExit(f"[ERROR] sens_mode は 'fit' か 'edpi': {cfg['sens_mode']}")
+            raise SystemExit(f"[ERROR] sens_mode は 'ingame' か 'fit': {cfg['sens_mode']}")
+        # 画面上で固定した道筋（nominal = fit の倍率の cm）を，実際のマウスの cm に直す倍率
+        self.traj_scale = fit / self.px_per_cm
         deg_per_cm = self.px_per_cm / px_per_deg
-        self.sens = {"mode": cfg["sens_mode"], "px_per_cm": round(self.px_per_cm, 3),
+        self.sens = {"mode": cfg["sens_mode"], "mouse_dpi": dpi, "game_sens": sens,
+                     "edpi": round(dpi * sens, 1), "px_per_cm": round(self.px_per_cm, 3),
                      "deg_per_cm": round(deg_per_cm, 4), "cm_per_360": round(360 / deg_per_cm, 2),
-                     "edpi_equiv": round(deg_per_cm * 2.54 / yaw, 1), "game_yaw_deg": yaw,
-                     "game_fov_h_deg": cfg["game_fov_h_deg"], "mouse_dpi": cfg["mouse_dpi"],
-                     "game_sens_equiv": round(deg_per_cm * 2.54 / yaw / cfg["mouse_dpi"], 3)}
-        print(f"[SENS] {self.sens['mode']}: {self.px_per_cm:.1f} px/cm（画面 {self.W}×{self.H}）"
-              f" = eDPI {self.sens['edpi_equiv']:g} 相当（{cfg['mouse_dpi']:g} DPI × 感度 {self.sens['game_sens_equiv']:g}，"
-              f"{self.sens['cm_per_360']:.1f} cm/360，水平 FOV {cfg['game_fov_h_deg']:g}°）")
+                     "game_yaw_deg": yaw, "game_fov_h_deg": cfg["game_fov_h_deg"],
+                     "traj_scale": round(self.traj_scale, 4),
+                     "amp_x_cm": round(cfg["amp_cm"]["x"] * self.traj_scale, 2),
+                     "amp_y_cm": round(cfg["amp_cm"]["y"] * self.traj_scale, 2)}
+        print(f"[SENS] {self.sens['mode']}: DPI {dpi:g} × 感度 {sens:g} = eDPI {self.sens['edpi']:g}"
+              f"（{self.sens['cm_per_360']:.1f} cm/360，水平 FOV {cfg['game_fov_h_deg']:g}°）"
+              f" → 道筋を追うマウスの移動量 x ±{self.sens['amp_x_cm']:g} cm, y ±{self.sens['amp_y_cm']:g} cm"
+              f"（画面 {self.W}×{self.H}）")
+
+    def target_cm(self, traj, t):
+        """時刻 t のターゲット位置を，実際のマウスの cm で返す（道筋は画面上で固定）"""
+        x, y = target_position(traj, t)
+        return x * self.traj_scale, y * self.traj_scale
 
     # ---------- 共通 ----------
     def to_px(self, x_cm, y_cm):
@@ -286,7 +298,7 @@ class App:
         if self.preview_s > 0:
             self.draw_preview(traj, t)
         pygame.draw.circle(self.screen, cfg["target_on_color"] if on else cfg["target_color"],
-                           self.to_px(tx, ty), cfg["target_radius_cm"] * self.px_per_cm)
+                           self.to_px(tx, ty), cfg["target_radius_cm"] * self.traj_scale * self.px_per_cm)
         if t < -R:
             self.text(str(int(math.ceil(-R - t))), self.cy - 120)
         cpx = self.to_px(*cur)
@@ -298,7 +310,7 @@ class App:
         cfg = self.cfg
         n = cfg["preview_points"]
         tp = t + np.linspace(0, self.preview_s, n)
-        xs, ys = target_position(traj, tp)
+        xs, ys = self.target_cm(traj, tp)
         pts = [self.to_px(a, b) for a, b in zip(xs, ys)]
         bg, col = np.array(cfg["bg"], float), np.array(cfg["preview_color"], float)
         w = cfg["preview_width_px"]
@@ -336,7 +348,7 @@ class App:
         cfg = self.cfg
         R, Tlen = traj["ramp_s"], traj["T"]
         cd = cfg["countdown_s"]
-        rad_cm = cfg["target_radius_cm"]
+        rad_cm = cfg["target_radius_cm"] * self.traj_scale      # 画面上の大きさは固定
         cur = np.zeros(2)
         rows = []
         self.pump()  # 溜まった動きを捨てる
@@ -359,9 +371,9 @@ class App:
                 tx = ty = 0.0
                 cur[:] = 0                     # カウントダウン中はカーソルを中央に固定（生の動きは記録する）
             else:
-                tx, ty = (float(v) for v in target_position(traj, t))
+                tx, ty = (float(v) for v in self.target_cm(traj, t))
                 if self.sim is not None:
-                    lx, ly = ((float(v) for v in target_position(traj, t + self.sim.lead))
+                    lx, ly = ((float(v) for v in self.target_cm(traj, t + self.sim.lead))
                               if self.sim.lead > 0 else (tx, ty))
                     dx, dy, n = self.sim.step(t, lx, ly, cur, 1 / 120 if self.args.fast
                                               else max(self.clock.get_time() / 1000, 1e-3), self.cm_per_count)
@@ -411,7 +423,8 @@ class App:
         cfg = self.cfg
         plan = full_plan(participant, cfg, self.args.only, self.args.no_practice, self.args.no_static)
         root = out_root(cfg)
-        sdir = unique_dir(root / f"{cfg['session_prefix']}{participant}_{time.strftime('%Y%m%d_%H%M%S')}")
+        dpi_tag = f"_dpi{cfg['mouse_dpi']:g}" if getattr(self.args, "dpi", None) else ""
+        sdir = unique_dir(root / f"{cfg['session_prefix']}{participant}{dpi_tag}_{time.strftime('%Y%m%d_%H%M%S')}")
         session = {"kind": "aim_session", "participant": participant, "created": time.strftime("%Y-%m-%d %H:%M:%S"),
                    "calib": calib, "note": note, "camera": bool(self.rec.enabled),
                    "camera_info": self.rec.info, "config": cfg, "screen_px": [self.W, self.H],
@@ -608,6 +621,8 @@ class App:
 
 def add_common_args(ap):
     ap.add_argument("participant", nargs="?", default=None, help="参加者 ID（例 P01）")
+    ap.add_argument("--dpi", type=float, default=None,
+                    help="PC 側で設定したマウスの DPI（実測値．task_config の mouse_dpi を上書きし，フォルダ名にも入る）")
     ap.add_argument("--only", help="band:seed の 1 本だけ（例 fast:1）")
     ap.add_argument("--no-practice", action="store_true", help="練習を飛ばす")
     ap.add_argument("--no-static", action="store_true", help="静止の計測を飛ばす")
