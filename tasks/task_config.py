@@ -47,7 +47,7 @@ CFG = {
     "target_radius_cm": 0.8,
     "cursor_radius_px": 6,
     # 予告線: これから preview_s 秒のターゲットの道筋を線で見せる（反応時間への依存を減らす）。0 で表示しない
-    "preview_s": 0.5,
+    "preview_s": 0.0,
     "preview_points": 40,
     "preview_width_px": 3,
     "preview_fade": True,                # 先へ行くほど背景に溶かす
