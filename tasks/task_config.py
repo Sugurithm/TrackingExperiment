@@ -6,6 +6,17 @@ CFG = {
     # 公称 DPI ではなく tracking_task.py --measure-dpi で実測した counts/inch を入れる
     "mouse_dpi": 800.0,
 
+    # ---- 感度（マウスの cm → 画面の px）----
+    # "fit"  = 振幅（amp_cm）がちょうど画面に収まる倍率にする（2D の既定．画面の大きさで倍率が決まる）
+    # "edpi" = FPS の eDPI（= DPI × ゲーム内感度）と同じ見え方にする．画面の中央で，
+    #          その eDPI・視野角のゲームで視点を回したときと同じ px/cm になる
+    #          （振幅が画面からはみ出す場合は起動時に警告する．amp_cm を小さくすること）
+    # どちらの場合も，換算の eDPI・cm/360 を session.json に残す（3D の条件と比べるため）
+    "sens_mode": "fit",
+    "edpi": 320.0,                # 800 DPI × 感度 0.4
+    "game_yaw_deg": 0.07,         # ゲーム内感度 1・1 カウントあたりの回転 [deg]（VALORANT 0.07，CS2 / Apex 0.022）
+    "game_fov_h_deg": 103.0,      # 水平の視野角 [deg]（VALORANT は 103 で固定）
+
     # ---- 軌道 ----
     "trial_s": 40.0,        # 解析区間の長さ T [s]。周波数はすべて 1/T の整数倍
     "ramp_s": 3.0,          # 解析区間の前の立ち上がり [s]（中央から振幅を 0→1 にする。解析しない）
@@ -24,6 +35,9 @@ CFG = {
     # 帯域の順（練習・本番とも）。["slow", "fast"] = 全員が遅い帯域から（慣れてから速い帯域へ）
     #   "alternate" にすると参加者番号の偶奇で slow → fast / fast → slow を入れ替える
     "band_order": ["slow", "fast"],
+    # 帯域内の seed の順。"fixed" = 全員同じ順（seeds_main の順に並べ，最後に seeds_main[0] をもう一度）
+    #   "shuffle" = seed 2–5 の順を参加者ごとに入れ替える
+    "seed_order": "fixed",
 
     # ---- 画面 ----
     "margin_px": 60,          # 振幅いっぱいでも画面端からこれだけ空ける
@@ -50,7 +64,7 @@ CFG = {
 
     # ---- RealSense（run_experiment.py のとき）----
     # カメラの設定（解像度・fps・露出）は experiment/config.py を使う（較正と同じ設定にするため）
-    "rs_record_practice": False,  # 練習も記録するか（容量が大きいので既定は記録しない）
+    "rs_record_practice": True,   # 練習も記録するか（1 本あたり数 GB 増える．False で記録しない）
     "rs_tail_s": 0.5,             # 試行の終わりからこれだけ余分に記録してから止める [s]
     "rs_start_timeout_s": 15.0,   # 記録が始まらないときに失敗とみなすまでの時間 [s]
 

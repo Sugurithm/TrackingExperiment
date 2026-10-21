@@ -17,7 +17,7 @@ run_experiment.py
     残る小さなずれ（フレーム時刻の変換・露光のタイミング）は，後でマウスの速さと手首の速さを比べて確かめる．
   - 記録の開始に失敗したら画面で R（もう一度）/ S（カメラなしで続ける）を選ぶ．
     記録が途中で止まった・fps が落ちた・課題の全体を覆っていないときは結果の画面に出るので R でやり直す．
-  - 練習はカメラを記録しない（task_config の rs_record_practice）．静止の計測は記録する．
+  - 静止・練習・本番のすべてを記録する（練習を記録しないときは task_config の rs_record_practice = False）．
 
 試行のフォルダの meta.json は experiment/ の trial_* と同じ形なので，関節の推定はそのまま:
   python experiment/rs_joints.py recordings/aim_P01_YYYYMMDD_HHMMSS/trial_03_fast_s1

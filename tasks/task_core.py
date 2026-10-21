@@ -142,13 +142,48 @@ class App:
         self.T = TEXT[self.lang]
         self.cm_per_count = 2.54 / self.cfg["mouse_dpi"]
         self.preview_s = self.cfg["preview_s"] if getattr(args, "preview", None) is None else args.preview
-        m = self.cfg["margin_px"]
-        self.px_per_cm = min((self.W / 2 - m) / self.cfg["amp_cm"]["x"],
-                             (self.H / 2 - m) / self.cfg["amp_cm"]["y"])
+        self.setup_scale()
         self.clock = pygame.time.Clock()
         pygame.mouse.set_visible(False)
         pygame.event.set_grab(True)   # 相対モード（画面端で止まらない．Windows では Raw Input）
         self.sim = None
+
+    # ---------- 感度 ----------
+    def setup_scale(self):
+        """マウスの cm → 画面の px の倍率を決め，対応する eDPI・cm/360 を計算する．
+
+        FPS では 1 カウントで game_yaw_deg × 感度 [deg] 回る．DPI を掛けると 1 cm あたり
+            deg_per_cm = game_yaw_deg × eDPI / 2.54
+        視野角 FOV の透視投影では，画面の中央で 1 deg が px_per_deg = (W/2) / tan(FOV/2) × π/180 [px]．
+        2D の px_per_cm をこの積に揃えると，画面の中央での見え方がその eDPI のゲームと同じになる．
+        """
+        cfg = self.cfg
+        m = cfg["margin_px"]
+        fit = min((self.W / 2 - m) / cfg["amp_cm"]["x"], (self.H / 2 - m) / cfg["amp_cm"]["y"])
+        px_per_deg = (self.W / 2) / math.tan(math.radians(cfg["game_fov_h_deg"] / 2)) * math.pi / 180
+        yaw = cfg["game_yaw_deg"]
+        if cfg["sens_mode"] == "edpi":
+            deg_per_cm = yaw * cfg["edpi"] / 2.54
+            self.px_per_cm = deg_per_cm * px_per_deg
+            reach_x = (self.W / 2 - m) / self.px_per_cm
+            reach_y = (self.H / 2 - m) / self.px_per_cm
+            if reach_x < cfg["amp_cm"]["x"] or reach_y < cfg["amp_cm"]["y"]:
+                print(f"[SENS][WARN] eDPI {cfg['edpi']:g} では画面に収まる振幅は x ±{reach_x:.1f} cm, "
+                      f"y ±{reach_y:.1f} cm です（設定は x ±{cfg['amp_cm']['x']:g}, y ±{cfg['amp_cm']['y']:g}）．"
+                      f"task_config の amp_cm を小さくしてください")
+        elif cfg["sens_mode"] == "fit":
+            self.px_per_cm = fit
+        else:
+            raise SystemExit(f"[ERROR] sens_mode は 'fit' か 'edpi': {cfg['sens_mode']}")
+        deg_per_cm = self.px_per_cm / px_per_deg
+        self.sens = {"mode": cfg["sens_mode"], "px_per_cm": round(self.px_per_cm, 3),
+                     "deg_per_cm": round(deg_per_cm, 4), "cm_per_360": round(360 / deg_per_cm, 2),
+                     "edpi_equiv": round(deg_per_cm * 2.54 / yaw, 1), "game_yaw_deg": yaw,
+                     "game_fov_h_deg": cfg["game_fov_h_deg"], "mouse_dpi": cfg["mouse_dpi"],
+                     "game_sens_equiv": round(deg_per_cm * 2.54 / yaw / cfg["mouse_dpi"], 3)}
+        print(f"[SENS] {self.sens['mode']}: {self.px_per_cm:.1f} px/cm（画面 {self.W}×{self.H}）"
+              f" = eDPI {self.sens['edpi_equiv']:g} 相当（{cfg['mouse_dpi']:g} DPI × 感度 {self.sens['game_sens_equiv']:g}，"
+              f"{self.sens['cm_per_360']:.1f} cm/360，水平 FOV {cfg['game_fov_h_deg']:g}°）")
 
     # ---------- 共通 ----------
     def to_px(self, x_cm, y_cm):
@@ -380,13 +415,13 @@ class App:
         session = {"kind": "aim_session", "participant": participant, "created": time.strftime("%Y-%m-%d %H:%M:%S"),
                    "calib": calib, "note": note, "camera": bool(self.rec.enabled),
                    "camera_info": self.rec.info, "config": cfg, "screen_px": [self.W, self.H],
-                   "px_per_cm": self.px_per_cm, "cm_per_count": self.cm_per_count, "preview_s": self.preview_s,
+                   "px_per_cm": self.px_per_cm, "sensitivity": self.sens, "cm_per_count": self.cm_per_count, "preview_s": self.preview_s,
                    "simulate": bool(self.args.simulate), "plan": plan, "trials": []}
         summary = []
         print(f"[SESSION] {sdir}")
         self.check_disk(root, plan)
         if self.args.simulate:
-            from sim_player import SimPlayer
+            from sim_play import SimPlayer
             a = self.args
             self.sim = SimPlayer(traj_lead=min(a.sim_lead, self.preview_s), delay=a.sim_delay, tau=a.sim_tau,
                                  noise=a.sim_noise, seed=sum(map(ord, participant)) % 1000)
