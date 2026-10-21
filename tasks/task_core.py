@@ -43,46 +43,49 @@ TASK_COLS = ["frame", "t", "epoch", "target_x_cm", "target_y_cm", "cursor_x_cm",
 
 TEXT = {
     "ja": {
-        "next": "試行 {i}/{n}（{kind}）   SPACE で開始   ESC で中断",
+        "next": "試行 {i}/{n}（{kind}）   クリックで開始   ESC で中断",
         "practice": "練習", "main": "本番", "static": "静止",
         "howto": "赤い円の中にカーソルを入れ続けてください（入ると緑になります）",
         "howto_static": "マウスを握ったまま，腕も手も動かさずに静止してください",
         "static_now": "静止  あと {s} 秒",
         "result": "ターゲット上 {on:.0f}%   平均のずれ {rms:.1f} cm",
         "result_static": "静止中のマウスの動き {d:.2f} cm",
-        "result_keys": "SPACE: 次へ   R: この試行をやり直す",
-        "done": "終了です。ありがとうございました（SPACE で閉じる）",
+        "result_keys": "クリック: 次へ   R: この試行をやり直す",
+        "done": "終了です。ありがとうございました（クリックで閉じる）",
         "cam_boot": "カメラを準備しています…",
         "cam_wait": "カメラの記録を開始しています…",
         "cam_fail": "カメラの記録を開始できません: {r}",
         "cam_fail_keys": "R: もう一度   S: カメラなしで続ける   ESC: 中断",
         "cam_bad": "カメラ: {msg}（R でやり直すことをおすすめします）",
         "saving": "保存しています…",
-        "dpi1": "定規に沿ってマウスを {cm:.0f} cm 右へ動かします。SPACE で開始",
-        "dpi2": "動かして、止めたら SPACE   （x counts = {c}）",
-        "dpi3": "{c} counts / {cm:.0f} cm = {dpi:.1f} counts/inch   SPACE で再測定、ESC で終了",
+        "dpi1": "定規に沿ってマウスを {cm:.0f} cm 右へ動かします。クリックで開始",
+        "dpi2": "動かして、止めたらクリック   （x counts = {c}）",
+        "dpi3": "{c} counts / {cm:.0f} cm = {dpi:.1f} counts/inch   クリックで再測定、ESC で終了",
     },
     "en": {
-        "next": "Trial {i}/{n} ({kind})   SPACE to start   ESC to quit",
+        "next": "Trial {i}/{n} ({kind})   click to start   ESC to quit",
         "practice": "practice", "main": "main", "static": "still",
         "howto": "Keep the cursor inside the red circle (it turns green)",
         "howto_static": "Hold the mouse and keep your arm and hand still",
         "static_now": "Hold still  {s} s",
         "result": "on target {on:.0f}%   RMS error {rms:.1f} cm",
         "result_static": "mouse moved {d:.2f} cm while still",
-        "result_keys": "SPACE: next   R: redo this trial",
-        "done": "Finished. Thank you (SPACE to close)",
+        "result_keys": "click: next   R: redo this trial",
+        "done": "Finished. Thank you (click to close)",
         "cam_boot": "Preparing the camera...",
         "cam_wait": "Starting the camera recording...",
         "cam_fail": "Camera recording failed to start: {r}",
         "cam_fail_keys": "R: retry   S: continue without camera   ESC: quit",
         "cam_bad": "Camera: {msg} (redo with R is recommended)",
         "saving": "Saving...",
-        "dpi1": "Move the mouse {cm:.0f} cm to the right along a ruler. SPACE to start",
-        "dpi2": "Move, then SPACE   (x counts = {c})",
-        "dpi3": "{c} counts / {cm:.0f} cm = {dpi:.1f} counts/inch   SPACE again, ESC to quit",
+        "dpi1": "Move the mouse {cm:.0f} cm to the right along a ruler. Click to start",
+        "dpi2": "Move, then click   (x counts = {c})",
+        "dpi3": "{c} counts / {cm:.0f} cm = {dpi:.1f} counts/inch   click again, ESC to quit",
     },
 }
+
+
+CLICK = "click"  # 左クリックを表す疑似キー
 
 
 class Quit(Exception):
@@ -224,23 +227,30 @@ class App:
                 dx += e.rel[0]
                 dy -= e.rel[1]
                 n += 1
+            elif e.type == pygame.MOUSEBUTTONDOWN:
+                if e.button == 1:
+                    keys.append(CLICK)  # 左クリック．待ち画面でだけ使う（試行中は呼び出し側が無視する）
             elif e.type == pygame.KEYDOWN:
                 if e.key == pygame.K_ESCAPE:
                     raise Quit
                 keys.append(e.key)
         return dx, dy, n, keys
 
-    def wait_keys(self, lines, keys=(pygame.K_SPACE,), auto=pygame.K_SPACE):
-        """lines を表示して keys のどれかが押されるまで待つ．押されたキーを返す（自動プレイでは auto）．"""
+    def wait_keys(self, lines, keys=(CLICK,), auto=CLICK):
+        """lines を表示して keys のどれか（CLICK = 左クリック）が来るまで待つ．来たものを返す（自動プレイでは auto）．
+        直前の試行中のクリックや連打で次の画面が飛ばないよう，入るときにイベントを捨て，0.4 s は入力を受け付けない．"""
         if self.args.simulate:
             return auto
+        pygame.event.clear()
+        t_in = time.perf_counter()
         while True:
             self.lines(lines)
             self.rec.poll()
             _, _, _, pressed = self.pump()
-            for k in pressed:
-                if k in keys:
-                    return k
+            if time.perf_counter() - t_in >= 0.4:
+                for k in pressed:
+                    if k in keys:
+                        return k
             self.clock.tick(60)
 
     # ---------- カメラ ----------
@@ -542,7 +552,7 @@ class App:
             shown.append((self.T["cam_bad"].format(msg=cam_msg), (240, 140, 120)))
             print(f"[RS][WARN] {cam_msg}")
         shown.append(self.T["result_keys"])
-        k = self.wait_keys(shown, keys=(pygame.K_SPACE, pygame.K_r))
+        k = self.wait_keys(shown, keys=(CLICK, pygame.K_r))
         again = k == pygame.K_r
 
         row = {"index": p["index"], "attempt": attempt, "kind": p["kind"], "band": p.get("band", ""),
@@ -611,7 +621,7 @@ class App:
                 dx, _, _, keys = self.pump()
                 total += dx
                 self.lines([self.T["dpi2"].format(c=total)])
-                if pygame.K_SPACE in keys:
+                if CLICK in keys:
                     break
                 self.clock.tick(240)
             dpi = abs(total) / (cm / 2.54)
