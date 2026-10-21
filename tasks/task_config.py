@@ -21,6 +21,9 @@ CFG = {
     },
     "seeds_main": [1, 2, 3, 4, 5],   # 本番の軌道（帯域ごと）。seeds_main[0] は帯域の最初と最後に 2 回
     "seeds_practice": [901],         # 練習用（帯域ごと 1 本）
+    # 帯域の順（練習・本番とも）。["slow", "fast"] = 全員が遅い帯域から（慣れてから速い帯域へ）
+    #   "alternate" にすると参加者番号の偶奇で slow → fast / fast → slow を入れ替える
+    "band_order": ["slow", "fast"],
 
     # ---- 画面 ----
     "margin_px": 60,          # 振幅いっぱいでも画面端からこれだけ空ける

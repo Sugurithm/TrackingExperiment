@@ -67,11 +67,15 @@ def trajectory_stats(traj):
 
 
 def build_plan(participant, cfg=CFG):
-    """試行の順番。帯域の順は参加者番号の偶奇で入れ替え、帯域内の seed 2–5 は参加者ごとに並べ替える。
+    """試行の順番。帯域の順は task_config の band_order（既定は全員 slow → fast）、帯域内の seed 2–5 は参加者ごとに並べ替える。
     seed_main[0] は帯域の最初と最後に置く（再現性と慣れの確認）"""
     pid = int("".join(c for c in str(participant) if c.isdigit()) or 0)
     rng = np.random.default_rng(pid)
-    bands = ["slow", "fast"] if pid % 2 == 0 else ["fast", "slow"]
+    order = cfg.get("band_order", ["slow", "fast"])
+    if order == "alternate":          # 参加者番号の偶奇で入れ替える（順番の効果を相殺したいとき）
+        bands = ["slow", "fast"] if pid % 2 == 0 else ["fast", "slow"]
+    else:
+        bands = list(order)
     plan = []
     for b in bands:
         for s in cfg["seeds_practice"]:
