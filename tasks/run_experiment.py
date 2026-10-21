@@ -3,8 +3,10 @@ run_experiment.py
 ────────────────────────────────────────────────────────────────────
 2D エイムトラッキング課題 + RealSense の記録（実験協力者の本番用）．
 
-  python task/run_experiment.py P01 --calib calib_20261020_1400
-  python task/run_experiment.py P01 --only fast:1 --no-practice      # 1 本だけ（確認用）
+  python tasks/run_experiment.py P01 --calib calib_20261020_1400
+  python tasks/run_experiment.py P01 --only fast:1 --no-practice      # 1 本だけ（確認用）
+  python tasks/run_experiment.py P01 --dpi 400 --calib calib_...   # PC の DPI を 400 にしたとき（800, 1600 も同様）
+      → フォルダ名に dpi400 が入り，eDPI と必要なマウスの移動量が session.json の "sensitivity" に残る
 
 流れ（1 試行ごと）:
   SPACE → カメラの記録を開始（最初のフレームが届くまで待つ）→ カウントダウン → 課題 →
