@@ -485,7 +485,7 @@ def print_summary(trial_dir, t, P, status=None, P_left=None, swapped=None, how=N
     for s0 in np.arange(0, rel[-1], 5.0):
         m = (rel >= s0) & (rel < s0 + 5)
         if m.any():
-            print(f"    {s0:5.0f}–{s0 + 5:3.0f} s  " + "  ".join(f"{100 * ok[m, k].mean():5.0f}" for k in range(len(NAMES))))
+            print(f"    {s0:5.0f}-{s0 + 5:3.0f} s  " + "  ".join(f"{100 * ok[m, k].mean():5.0f}" for k in range(len(NAMES))))
     sync, _, _ = sync_io.load_sync(trial_dir)
     use = sync_io.operation_mask(sync, t) if sync else np.ones(len(t), bool)
     if sync:
@@ -526,6 +526,9 @@ def main():
                     help="--show で記録の SEC 秒から表示する（そこで一時停止）")
     ap.add_argument("--save-video", action="store_true", help="確認画面を joints/rs_diag.mp4 に保存する")
     ap.add_argument("--summary", action="store_true", help="保存済みの rs_joints.npz から集計を出し直すだけ")
+    ap.add_argument("--stride", type=int, default=getattr(config, "JOINT_STRIDE", 1), metavar="N",
+                    help="N フレームに 1 枚だけ処理する（既定は config.JOINT_STRIDE）．"
+                         "2 なら 60 fps の記録を 30 fps で処理し，時間が半分になる")
     args = ap.parse_args()
 
     trial_dir = io_utils.resolve_session_dir(args.trial, config.TRIAL_PREFIX)
@@ -545,6 +548,11 @@ def main():
     print(f"[TRIAL] {trial_dir}  関節: {', '.join(NAMES)}（左右とも推定し右を比較に使う）")
     print(f"[L/R] 本当の右肩が映る側: {side or '未設定（MediaPipe のラベルの多数決から学習）'}")
 
+    stride = max(1, int(args.stride))
+    saved_check = False
+    eff_fps = (getattr(config, "FPS", 60) or 60) / stride
+    if stride > 1:
+        print(f"[STRIDE] {stride} フレームに 1 枚だけ処理します（実効 {eff_fps:.0f} fps）")
     pose, hand = make_landmarkers()
     chooser = SideChooser()
     keys = ("uv", "P", "st", "vis")
@@ -561,6 +569,9 @@ def main():
         for k, (stamp, img, depth) in enumerate(pb.rgbd_frames()):
             now = time.perf_counter()
             timer["read"] += now - t_mark                              # .db3 の読み込み・深度の位置合わせ
+            if stride > 1 and k % stride:                              # 間引き（MediaPipe に渡さない）
+                t_mark = time.perf_counter()
+                continue
             t_rel = stamp - (T[0] if T else stamp)
             ts_ms = max(int(round(t_rel * 1000)), last_ms + 1)        # 単調増加が必要
             last_ms = ts_ms
@@ -582,7 +593,8 @@ def main():
             ROWS.append(frame_codes(det, st_r))
             SWAP.append(det["swap"])
             HOWS.append(HOW[det["how"]])
-            if k == n_total // 2:
+            if not saved_check and k >= n_total // 2:
+                saved_check = True
                 save_check_image(out / "rs_check.png", img, det["R"]["uv"])
 
             display = show and t_rel >= args.start
@@ -591,7 +603,7 @@ def main():
                 if args.save_video:
                     if writer is None:
                         writer = cv2.VideoWriter(str(out / "rs_diag.mp4"), cv2.VideoWriter_fourcc(*"mp4v"),
-                                                 60.0, (canvas.shape[1], canvas.shape[0]))
+                                                 float(eff_fps), (canvas.shape[1], canvas.shape[0]))
                     writer.write(canvas)
                 if display:
                     cv2.imshow(WIN, canvas)
@@ -629,12 +641,15 @@ def main():
     # hand_code   : 右手の状態（0 = 採用，2 = 検出なし・左手だけ，3 = 検出したが不採用）
     # lr_swapped  : MediaPipe の左右のラベルを入れ替えたか
     # lr_how      : 左右の決め方（-1 = Pose なし，0 = ラベルのまま，1 = 両肩の並び，2 = 直前との連続性）
+    # stride      : 何フレームに 1 枚処理したか（1 = 全フレーム）
+    # pose_model  : 使った Pose モデルのファイル名（heavy / full / lite の区別）
     np.savez(out / "rs_joints.npz", t=T, names=np.array(NAMES),
              P_C=P, uv=np.array(R["uv"]), status=ST, vis=np.array(R["vis"]),
              P_C_left=np.array(L["P"]), uv_left=np.array(L["uv"]),
              status_left=np.array(L["st"], np.int8), vis_left=np.array(L["vis"]),
              status_names=np.array(STATUS), pose_found=ROWS[:, 0] == OK, hand_code=ROWS[:, 1],
-             lr_swapped=SWAP, lr_how=HOWS)
+             lr_swapped=SWAP, lr_how=HOWS,
+             stride=np.int32(stride), pose_model=np.array(str(config.POSE_MODEL.name)))
     print(f"[DONE] {len(T)} frames -> {out / 'rs_joints.npz'}")
     print_timing(timer, len(T), time.perf_counter() - t_start)
     if args.save_video:

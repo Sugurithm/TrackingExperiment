@@ -94,8 +94,17 @@ SYNC_SEG_GAP      = 2.0     # ボードの検出がこれ以上途切れたら�
 SYNC_SEARCH       = 30.0    # 粗い探索の範囲 ±[s]（2 台の PC の時計のずれ）
 
 # ── rs_joints.py（.db3 → MediaPipe → 関節の 3 次元座標） ──
-POSE_MODEL = MODELS_DIR / "pose_landmarker_heavy.task"
+# Pose のモデル: "heavy"（精度優先．精度検証はこれで行った）/ "full"（約 2 倍速い）/ "lite"（最速）
+#   full・lite を使うときは models/ に pose_landmarker_<変種>.task を置く．
+#   変えたら experiment/ の比較で heavy との差を確かめること（aim_eval/compare_settings.py）
+POSE_VARIANT = "full"
+POSE_MODEL = MODELS_DIR / f"pose_landmarker_{POSE_VARIANT}.task"
 HAND_MODEL = MODELS_DIR / "hand_landmarker.task"
+
+# 何フレームに 1 枚だけ MediaPipe に渡すか（rs_joints.py --stride の既定）．
+#   1 = 全フレーム（60 fps）．2 = 30 fps で処理し，時間がちょうど半分になる．
+#   課題の最高周波数は 1.08 Hz，解析前に 5 Hz 低域通過をかけるので 30 fps でも情報は落ちない．
+JOINT_STRIDE = 1
 POSE_CONFIDENCE = 0.5       # 検出・追跡の信頼度（scripts/rs_estimate.py と同じ）
 HAND_CONFIDENCE = 0.5
 DEPTH_PATCH     = 2         # 関節の画素の周り ±n px の深度の中央値を使う（縁で背景を拾わないように）
