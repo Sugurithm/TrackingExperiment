@@ -31,12 +31,13 @@ CFG = {
         "slow": {"x": [2, 5, 11, 17], "y": [3, 7, 13, 19]},
         "fast": {"x": [3, 7, 13, 19, 29, 41], "y": [5, 11, 17, 23, 31, 43]},
     },
-    "seeds_main": [1, 2, 3],         # 本番の軌道（帯域ごと）。seeds_main[0] は帯域の最初と最後に 2 回（1, 2, 3, 1 の 4 本）
-    "seeds_practice": [901],         # 練習用（帯域ごと 1 本）
+    "seeds_main": [1, 2, 3],         # 本番の軌道（帯域ごと）。slow 3 本 + fast 3 本 = 6 本
+    "repeat_first": False,           # True にすると seeds_main[0] を帯域の最後にもう一度やる（再現性の確認．1, 2, 3, 1 の 4 本）
+    "seeds_practice": [],            # 練習用（帯域ごと）。空 = 練習なし．[901] なら帯域ごとに 1 本
     # 帯域の順（練習・本番とも）。["slow", "fast"] = 全員が遅い帯域から（慣れてから速い帯域へ）
     #   "alternate" にすると参加者番号の偶奇で slow → fast / fast → slow を入れ替える
     "band_order": ["slow", "fast"],
-    # 帯域内の seed の順。"fixed" = 全員同じ順（seeds_main の順に並べ，最後に seeds_main[0] をもう一度）
+    # 帯域内の seed の順。"fixed" = 全員同じ順（seeds_main の順に並べ，repeat_first なら最後に seeds_main[0] をもう一度）
     #   "shuffle" = seed 2–5 の順を参加者ごとに入れ替える
     "seed_order": "fixed",
 

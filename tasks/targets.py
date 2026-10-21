@@ -85,10 +85,10 @@ def build_plan(participant, cfg=CFG):
         s0, rest = cfg["seeds_main"][0], list(cfg["seeds_main"][1:])
         if cfg.get("seed_order", "fixed") == "shuffle":
             rng.shuffle(rest)
-        seq = [s0] + rest + [s0]
+        seq = [s0] + rest + ([s0] if cfg.get("repeat_first", True) else [])
         for i, s in enumerate(seq):
             plan.append({"band": b, "seed": int(s), "practice": False,
-                         "repeat": 1 if (s == s0 and i == len(seq) - 1) else 0})
+                         "repeat": 1 if (i > 0 and s == s0) else 0})
     for i, p in enumerate(plan):
         p["index"] = i
     return plan
