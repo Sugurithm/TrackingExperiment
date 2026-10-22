@@ -1,0 +1,22 @@
+Traceback (most recent call last):
+  File "C:\project\experiment\experiment\compare_joints.py", line 321, in <module>
+    main()
+  File "C:\project\experiment\experiment\compare_joints.py", line 278, in main
+    rs, mc, sync, calib, T_MC = load_inputs(trial_dir)
+                                ^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\project\experiment\experiment\compare_joints.py", line 61, in load_inputs
+    sync, calib, T_MC = sync_io.load_sync(trial_dir)
+                        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\project\experiment\experiment\lib\sync_io.py", line 26, in load_sync
+    T_MC = np.array(io_utils.load_json(calib / "T_MC.json")["T_MC"])
+                    ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\project\experiment\experiment\lib\io_utils.py", line 30, in load_json
+    raw = Path(path).read_bytes()
+          ^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\imura-lab\AppData\Local\Programs\Python\Python311\Lib\pathlib.py", line 1050, in read_bytes
+    with self.open(mode='rb') as f:
+         ^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\imura-lab\AppData\Local\Programs\Python\Python311\Lib\pathlib.py", line 1044, in open
+    return io.open(self, mode, buffering, encoding, errors, newline)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+FileNotFoundError: [Errno 2] No such file or directory: 'C:\\project\\experiment\\recordings\\calib_20261016_1850\\T_MC.json'

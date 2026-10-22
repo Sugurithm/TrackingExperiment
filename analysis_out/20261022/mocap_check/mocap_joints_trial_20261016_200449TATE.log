@@ -1,0 +1,10 @@
+[TRIAL] ..\recordings\trial_20261016_200449TATE
+[TAKE]  Take 2026-10-16 08.04.29 PMTATE.csv  27519 frames  120 fps
+[HAND]  手の点 = RHandOut
+[PRON]  回内外: 中央値 -13.6°  SD 11.1°  可動域 27.9°
+[VALID] shoulder: 92%  elbow: 95%  wrist: 95%  mcp3: 95%
+[LENGTH] shoulder–elbow: 中央値 241 mm  標準偏差 0.0 mm
+[LENGTH] elbow–wrist: 中央値 211 mm  標準偏差 13.5 mm
+[LENGTH] wrist–mcp3: 中央値 101 mm  標準偏差 0.0 mm
+[ANGLE] el_flex: +63.3±32.3°  wr_flex: -50.2±42.5°  wr_dev: +26.7±9.0°  sh_elev: +46.2±16.7°  sh_azim: -37.6±62.1°  hum_rot: -160.2±52.0°
+[DONE] -> ..\recordings\trial_20261016_200449TATE\joints\mc_joints.npz

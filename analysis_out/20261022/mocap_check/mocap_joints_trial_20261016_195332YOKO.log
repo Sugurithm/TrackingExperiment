@@ -1,0 +1,10 @@
+[TRIAL] ..\recordings\trial_20261016_195332YOKO
+[TAKE]  Take 2026-10-16 07.53.15 PMYOKO.csv  27886 frames  120 fps
+[HAND]  手の点 = RHandOut
+[PRON]  回内外: 中央値 -3.6°  SD 14.3°  可動域 23.4°
+[VALID] shoulder: 93%  elbow: 95%  wrist: 95%  mcp3: 95%
+[LENGTH] shoulder–elbow: 中央値 241 mm  標準偏差 0.0 mm
+[LENGTH] elbow–wrist: 中央値 218 mm  標準偏差 6.2 mm
+[LENGTH] wrist–mcp3: 中央値 101 mm  標準偏差 0.0 mm
+[ANGLE] el_flex: +40.4±15.3°  wr_flex: +323.6±119.9°  wr_dev: +29.1±8.4°  sh_elev: +51.9±13.6°  sh_azim: -30.4±41.4°  hum_rot: +225.6±107.8°
+[DONE] -> ..\recordings\trial_20261016_195332YOKO\joints\mc_joints.npz

@@ -6,6 +6,8 @@ __pycache__/
 
 # RealSense 録画（巨大）— ローカルに残し Git には rgb/ のみ載せる
 recordings/
+db_session/
+analysis/
 # recordings/**/*.mp4
 # recordings/**/*.csv
 # recordings/verify/

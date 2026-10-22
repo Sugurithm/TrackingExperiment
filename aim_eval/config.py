@@ -11,10 +11,25 @@ SESSIONS に解析したいセッションのフォルダを並べる。**ここ
 """
 
 SESSIONS = [
-    dict(dir=r"recordings/aim_Yuuki400_20261022_1540461",   participant="Yuuki",  dpi=400),
-    dict(dir=r"recordings/aim_Yuuki800_20261022_153317",   participant="Yuuki",  dpi=800),
+    dict(dir=r"recordings/aim_kakeru400_20261022_123951",   participant="kakeru",  dpi=400),
+    dict(dir=r"recordings/aim_kakeru800_20261022_123338",   participant="kakeru",  dpi=800),
+    dict(dir=r"recordings/aim_Keito400_20261021_170947",  participant="Keito", dpi=400),
+    dict(dir=r"recordings/aim_Keito800_20261021_171605",  participant="Keito", dpi=800),
+    dict(dir=r"recordings/aim_Kosuke400_20261021_172948",  participant="Kosuke", dpi=400),
+    dict(dir=r"recordings/aim_Kosuke800_20261021_173700",  participant="Kosuke", dpi=800),
+    dict(dir=r"recordings/aim_Suguru400_20261021_175327",  participant="Suguru", dpi=400),
+    dict(dir=r"recordings/aim_Suguru800_20261021_175931",  participant="Suguru", dpi=800),
     dict(dir=r"recordings/aim_Suzuka400_20261022_155937",  participant="Suzuka", dpi=400),
-    dict(dir=r"recordings/aim_Suzuka800_20261022_155314",  participant="Suzuka", dpi=800)
+    dict(dir=r"recordings/aim_Suzuka800_20261022_155314",  participant="Suzuka", dpi=800),
+    dict(dir=r"recordings/aim_Syou400_20261022_135724",  participant="Syou", dpi=400),
+    dict(dir=r"recordings/aim_Syou800_20261022_135037",  participant="Syou", dpi=800),
+    dict(dir=r"recordings/aim_xin400_20261022_125957",  participant="xin", dpi=400),
+    dict(dir=r"recordings/aim_xin800_20261022_125327",  participant="xin", dpi=800),
+    dict(dir=r"recordings/aim_Yuuki400_20261022_154046",   participant="Yuuki",  dpi=400),
+    dict(dir=r"recordings/aim_Yuuki800_20261022_153317",   participant="Yuuki",  dpi=800),
+    dict(dir=r"recordings/aim_Yuya400_20261022_134407",   participant="Yuya",  dpi=400),
+    dict(dir=r"recordings/aim_Yuya800_20261022_133738",   participant="Yuya",  dpi=800),
+
 ]
 
 OUT = "analysis"            # 出力先（参加者ごとのフォルダと between/ がこの下にできる）
@@ -27,7 +42,7 @@ OUT = "analysis"            # 出力先（参加者ごとのフォルダと betw
 #     None              … セッションにある帯域すべて
 #   静止試行（trial_00_static_pre）は帯域を持たないので、ここの指定に関わらず
 #   INCLUDE_STATIC = True なら必ず処理される（ノイズ床の測定に要る）。
-BANDS = ["slow"]
+BANDS = ["slow", "fast"]
 
 # ---- step1 関節位置の推定（時間がかかるのはここだけ。1 試行 3〜7 分）----
 SKIP_DONE = True            # joints/rs_joints.npz がある試行は飛ばす

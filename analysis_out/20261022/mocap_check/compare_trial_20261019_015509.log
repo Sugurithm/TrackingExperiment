@@ -1,0 +1,28 @@
+[TRIAL] ..\recordings\trial_20261019_015509
+[CALIB] calib_20261019_0137  同期区間 2 個
+  比較に使う RealSense フレーム 10372 / 11625（動作区間: 最初の同期より後，ボードを振った区間を除く）
+
+関節（RS / MoCap）     n   3次元RMS  偏りを除くRMS  垂直(中央値)  奥行き 平均±SD    遅れ   遅れも除くRMS
+    shoulder / shoulder 10372     70.0        36.8         41.4     -38.7 ± 10.7  決まらず
+       elbow / elbow    10372    102.4        99.6         16.1      -0.4 ± 52.0    +10 ms      99.6
+       wrist / wrist    10372    114.2       111.4         11.0     -17.7 ± 61.3     -0 ms     111.4
+  wrist_pose / wrist    10372    115.6       109.5         24.0     -18.0 ± 61.6    +15 ms     109.4
+        mcp3 / mcp3     10372    140.3       113.7         65.9      +7.9 ± 59.8     -0 ms     113.7
+  偏り（カメラ座標 x 右, y 下, z 奥）:
+      shoulder: [ 20.3 -41.3 -37.9] mm   ばらつき [24.1 27.1  6.3] mm
+         elbow: [ -2.6 -23.6   1.5] mm   ばらつき [18.4 68.  70.5] mm
+         wrist: [ 17.3 -13.  -12.9] mm   ばらつき [21.8 73.6 80.8] mm
+    wrist_pose: [ 31.2 -16.8 -10.6] mm   ばらつき [17.  72.7 80.1] mm
+          mcp3: [ 22.7 -74.8  25. ] mm   ばらつき [22.7 73.  84.2] mm
+[LENGTH] shoulder-elbow: RealSense 259 ± 29.4 mm  MoCap 247 ± 0.0 mm
+[LENGTH] elbow-wrist: RealSense 232 ± 9.5 mm  MoCap 212 ± 5.5 mm
+[LENGTH] wrist-mcp3: RealSense 79 ± 4.1 mm  MoCap 105 ± 0.0 mm
+
+関節角（RealSense vs MoCap）  n    偏り      ばらつき   偏りを除くRMS   相関    振幅比  可動域 RS/MC
+   el_flex  10372    +7.25°     5.16°        5.16°   +0.809    0.94   21.6/25.2°
+   wr_flex  10372   +41.52°     7.28°        7.29°   +0.542    0.95   23.7/23.3°
+    wr_dev  10372   -21.51°     8.80°        8.82°   +0.085    1.56   25.3/15.7°
+  偏りは関節中心と点の取り方の違い（MediaPipe の MCP3 と MoCap の手マーカー）で出る．
+  **使えるかは「偏りを除く RMS」と「振幅比」で判断する**（偏りは個人内の比較では相殺される）．
+  参考: 前腕の回内外（MoCap のみ）SD 8.6°  可動域 26.6°  … RealSense では測れない自由度
+[DONE] -> ..\recordings\trial_20261019_015509\compare
