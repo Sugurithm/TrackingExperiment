@@ -146,3 +146,34 @@ cd ..
 ## 7. 再現するには
 
 上の §2 の (1)〜(5) を順に実行する。乱数は `--seed 0` で固定。**(3) の run.py は `OUT/run_log.md` を上書きする**ので、この記録を残したいときは先に退避するか、(3) のあとに改名すること。
+
+## 8. 追補（2026-10-23）: エイムの質と協調の関係
+
+結果は [`report_perf.md`](report_perf.md)。
+
+```bash
+# prelim_inference.py（§2 の (5)）のあとに実行。20 s ほど
+PYTHONIOENCODING=utf-8 .venv/Scripts/python.exe aim_eval/perf_coordination.py     --config analysis_out/20261022/config_used.py --out analysis_out/20261022     > analysis_out/20261022/perf_stdout.log
+#   既定: --prelim prelim_relaxed --n-boot 5000 --n-perm 5000 --seed 0
+```
+
+- `aim_eval/perf_coordination.py`（新規、sha256 先頭 `91978de302d1e6b4`）。既存コードは変更していない。
+- 入力:
+  - `between/trials.csv`（a5 の遅れ・remnant、a6 の RMS・on-target）
+  - `prelim_relaxed/trials_prelim.csv`（協調の指標）
+  - 各試行の `task.csv`（250 Hz のカーソル・ターゲット）
+- 出力は `perf_coordination/`。
+- 途中で決めたこと:
+  - **SPARC を解析から外した**: 遅れて小さく追う試行ほど「滑らか」に出たため。代わりに「1.5 Hz 超の割合」を使う。
+  - **追従帯域 fb を外した**: 全条件で約 20 Hz に張り付く外挿値だったため。
+  - 置換検定とブートストラップを行列計算にした（結果の定義は同じ、乱数の消費の仕方が変わる）。
+- 多重比較: 帯域ごとに 110 検定（協調 10 × 質 11）の BH-FDR。練度の τ は帯域ごとに 11 検定。
+
+### 8.1 DPI の層に分けて再実行（2026-10-23）
+
+`perf_coordination.py` を改め、B1・B2・練度の τ を **400 だけ / 800 だけ / 400+800** の 3 層で別々に計算するようにした（出力の `stratum` 列）。
+- BH-FDR は (層 × 帯域) ごと。
+- 400 と 800 の関係の差の検定も足した（`dpi_heterogeneity.csv`）。
+- 実行コマンドは §8 と同じ（約 1 分）。
+- 改める前の版は `C:\Users\IMURA-~1\AppData\Local\Temp\claude\…\scratchpad\perf_coordination_before_strata.py` に退避したが、作業用の一時領域なので残らない。差分は「§2 の層のループの追加」と「図を層ごとに並べる」だけ。
+- 現在の `aim_eval/perf_coordination.py` の sha256 先頭: `188c049945423b7e`

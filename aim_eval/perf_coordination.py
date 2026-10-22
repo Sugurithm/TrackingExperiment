@@ -25,7 +25,7 @@
      err_cv         … 2 s 窓ごとの RMS 誤差の変動係数（試行内で出来がぶれるか）
    追従の動特性（a5、x・y の平均）
      delay_ms       … 実効遅れ [ms]
-     fb_hz          … 追従の帯域 [Hz]
+     （a5 の追従帯域 fb は外挿で約 20 Hz に張り付くので使わない。CSV には残す）
 
 2. 協調の指標との関係（協調は prelim_inference.py の値。手首に依存する指標は【参考】）
    B1 人物間   … 人の平均（DPI 2 条件 × seed 3 本の平均）どうしの Spearman ρ。9 人。
@@ -57,8 +57,9 @@ PERF = [  # (キー, 見出し, 良い向き: +1 = 大きいほど良い / −1 
     ("log_jerk_ratio", "躍度比 log10", -1), ("hf_frac", "1.5 Hz 超の割合", -1), ("submove_rate", "修正の頻度 [1/s]", -1),
     ("hf_jitter", "2–10 Hz の揺れ [mm/s]", -1), ("remnant", "remnant", -1), ("exit_rate", "外れる頻度 [1/s]", -1),
     ("dwell_s", "滞在時間 [s]", +1), ("err_cv", "誤差の変動係数", -1),
-    ("delay_ms", "実効遅れ [ms]", -1), ("fb_hz", "追従帯域 [Hz]", +1),
+    ("delay_ms", "実効遅れ [ms]", -1),
 ]
+# 追従帯域（a5 の fb_fit_hz）は全条件で約 20 Hz に張り付いた（入力周波数の範囲 ≤ 1.08 Hz からの外挿）ので使わない
 COORD = [  # (キー, 見出し, 手首に依存するか)
     ("v3_N_eff", "N_eff（手首なし）", False), ("v2_share_distal", "遠位シェア", False),
     ("v4_share_trunk", "体幹シェア", False), ("v4_share_upperarm", "上腕シェア", False),
@@ -167,21 +168,30 @@ def bh(p):
     return q
 
 
+def _rowcorr(A, B):
+    A = A - A.mean(1, keepdims=True); B = B - B.mean(1, keepdims=True)
+    den = np.sqrt((A ** 2).sum(1) * (B ** 2).sum(1))
+    with np.errstate(invalid="ignore", divide="ignore"):
+        return (A * B).sum(1) / den
+
+
 def spearman_full(x, y, rng, n_boot, n_perm):
+    """Spearman ρ、並べ替え p（両側）、人をリサンプルしたブートストラップ 95 % CI（行列でまとめて計算）。"""
     x, y = np.asarray(x, float), np.asarray(y, float)
     ok = np.isfinite(x) & np.isfinite(y); x, y = x[ok], y[ok]
-    if len(x) < 5:
-        return dict(n=len(x), rho=np.nan, lo=np.nan, hi=np.nan, p=np.nan)
-    rho = stats.spearmanr(x, y).statistic
-    null = np.array([stats.spearmanr(x, rng.permutation(y)).statistic for _ in range(n_perm)])
+    n = len(x)
+    if n < 5:
+        return dict(n=n, rho=np.nan, lo=np.nan, hi=np.nan, p=np.nan)
+    rx, ry = stats.rankdata(x), stats.rankdata(y)
+    rho = float(np.corrcoef(rx, ry)[0, 1])
+    perm = np.argsort(rng.random((n_perm, n)), axis=1)
+    null = _rowcorr(np.broadcast_to(rx, (n_perm, n)), ry[perm])
     p = float((np.sum(np.abs(null) >= abs(rho) - 1e-12) + 1) / (n_perm + 1))
-    bs = []
-    for _ in range(n_boot):
-        i = rng.integers(0, len(x), len(x))
-        if np.unique(x[i]).size > 2 and np.unique(y[i]).size > 2:
-            bs.append(stats.spearmanr(x[i], y[i]).statistic)
+    idx = rng.integers(0, n, (n_boot, n))
+    bs = _rowcorr(stats.rankdata(x[idx], axis=1), stats.rankdata(y[idx], axis=1))
+    bs = bs[np.isfinite(bs)]
     lo, hi = (np.percentile(bs, [2.5, 97.5]) if len(bs) > n_boot / 2 else (np.nan, np.nan))
-    return dict(n=int(len(x)), rho=float(rho), lo=float(lo), hi=float(hi), p=p)
+    return dict(n=n, rho=rho, lo=float(lo), hi=float(hi), p=p)
 
 
 def residualize(rows, k, factors):
@@ -345,7 +355,11 @@ def main():
     lg(md(desc, [("帯域", "band"), ("指標", "lab"), ("400", "m400", "{:.3g}"), ("800", "m800", "{:.3g}"),
                  ("d", "d", "{:+.3g}"), ("dz", "dz", "{:+.2f}"), ("800 で良", "n_better", "{:.0f}"),
                  ("p (Wilcoxon)", "p_w", "{:.3f}"), ("ICC", "icc", "{:+.2f}"),
-                 ("τ（練度, 良い向き）", "tau", "{:+.2f}"), ("p(τ)", "p_tau", "{:.3f}")]))
+                 ("τ（練度, 良い向き）", "tau", "{:+.2f}"), ("p(τ)", "p_tau", "{:.3f}"), ("q(τ)", "q_tau", "{:.3f}")]))
+    for band in bands:                                    # 練度の τ の BH-FDR（帯域ごと、質の指標の数だけ）
+        idx = [i for i, r in enumerate(desc) if r["band"] == band]
+        for i, qq in zip(idx, bh([desc[i]["p_tau"] for i in idx])):
+            desc[i]["q_tau"] = float(qq)
     with open(os.path.join(pout, "perf_summary.csv"), "w", newline="", encoding="utf-8") as f:
         w = csv.DictWriter(f, fieldnames=list(desc[0])); w.writeheader()
         for r in desc:
@@ -367,41 +381,89 @@ def main():
         hdr += "\n"
     lg(hdr)
 
-    # ---- 2. 協調との関係
-    all_b1, all_b2, all_b3 = [], [], []
+    # ---- 2. 協調との関係（DPI の層: 400 だけ / 800 だけ / 400+800 をまとめて）
+    strata = [(f"{d:.0f}", [d]) for d in dpis] + ([("pooled", list(dpis))] if len(dpis) > 1 else [])
+    all_b1, all_b2, all_b3, skill_rows = [], [], [], []
     for band in bands:
-        # B1 人物間
-        for ck, cl, wd in COORD:
-            x = [np.nanmean([pm(p, band, d, ck) for d in dpis]) for p in people]
+        for sname, sd in strata:
+            # B1 人物間（その層の DPI だけで人の平均を作る）
+            for ck, cl, wd in COORD:
+                x = [np.nanmean([pm(p, band, d, ck) for d in sd]) for p in people]
+                for pk, pl, good in PERF:
+                    y = [np.nanmean([pm(p, band, d, pk) for d in sd]) for p in people]
+                    s = spearman_full(x, y, rng, a.n_boot, a.n_perm)
+                    all_b1.append({"stratum": sname, "band": band, "coord": ck, "clab": cl, "perf": pk, "plab": pl,
+                                   "good": good, **s, "rho_good": s["rho"] * good})
+            # B2 条件内（その層の試行だけ。(人 × DPI) と seed を除く）
+            rows = [r for r in cell(None, band, None) if r["dpi"] in sd]
+            fac = [("participant", "dpi"), ("seed",)]
+            rp = {pk: residualize(rows, pk, fac) for pk, _, _ in PERF}
+            for ck, cl, wd in COORD:
+                rx, rk = residualize(rows, ck, fac)
+                for pk, pl, good in PERF:
+                    s = partial_r(rx, rp[pk][0], max(rk, rp[pk][1]))
+                    all_b2.append({"stratum": sname, "band": band, "coord": ck, "clab": cl, "perf": pk, "plab": pl,
+                                   "good": good, **s, "r_good": s["r"] * good})
+            # 練度（質の指標、その層の DPI の人の平均）
+            sk = [p for p in people if p in SKILL]
+            ys = np.array([SKILL[p] for p in sk], float)
             for pk, pl, good in PERF:
-                y = [np.nanmean([pm(p, band, d, pk) for d in dpis]) for p in people]
-                s = spearman_full(x, y, rng, a.n_boot, a.n_perm)
-                all_b1.append({"band": band, "coord": ck, "clab": cl, "perf": pk, "plab": pl, "good": good, **s,
-                               "rho_good": s["rho"] * good})
-        # B2 条件内（試行レベル）
-        rows = cell(None, band, None)
-        fac = [("participant", "dpi"), ("seed",)]
-        rp = {pk: residualize(rows, pk, fac) for pk, _, _ in PERF}
-        for ck, cl, wd in COORD:
-            rx, rk = residualize(rows, ck, fac)
-            for pk, pl, good in PERF:
-                s = partial_r(rx, rp[pk][0], max(rk, rp[pk][1]))
-                all_b2.append({"band": band, "coord": ck, "clab": cl, "perf": pk, "plab": pl, "good": good, **s,
-                               "r_good": s["r"] * good})
-        # B3 DPI による変化どうし
+                xs = np.array([np.nanmean([pm(p, band, d, pk) for d in sd]) for p in sk])
+                tau = stats.kendalltau(xs, ys).statistic * good
+                null = [stats.kendalltau(xs, rng.permutation(ys)).statistic * good for _ in range(2000)]
+                skill_rows.append({"stratum": sname, "band": band, "perf": pk, "plab": pl, "tau": float(tau),
+                                   "p": float((np.sum(np.abs(null) >= abs(tau) - 1e-12) + 1) / 2001)})
+        # B3 DPI による変化どうし（定義上 400 と 800 の両方を使う）
         for ck, cl, wd in COORD:
             dx = [pm(p, band, dpis[-1], ck) - pm(p, band, dpis[0], ck) for p in people]
             for pk, pl, good in PERF:
                 dy = [pm(p, band, dpis[-1], pk) - pm(p, band, dpis[0], pk) for p in people]
                 s = spearman_full(dx, dy, rng, a.n_boot, a.n_perm)
-                all_b3.append({"band": band, "coord": ck, "clab": cl, "perf": pk, "plab": pl, "good": good, **s,
-                               "rho_good": s["rho"] * good})
-    for L in (all_b1, all_b2, all_b3):
-        for band in bands:
-            idx = [i for i, r in enumerate(L) if r["band"] == band]
-            q = bh([L[i]["p"] for i in idx])
-            for i, qq in zip(idx, q):
+                all_b3.append({"stratum": "delta", "band": band, "coord": ck, "clab": cl, "perf": pk, "plab": pl,
+                               "good": good, **s, "rho_good": s["rho"] * good})
+    for L in (all_b1, all_b2, all_b3, skill_rows):          # BH-FDR は (層 × 帯域) ごと
+        for key in sorted({(r["stratum"], r["band"]) for r in L}):
+            idx = [i for i, r in enumerate(L) if (r["stratum"], r["band"]) == key]
+            for i, qq in zip(idx, bh([L[i]["p"] for i in idx])):
                 L[i]["q"] = float(qq)
+
+    # 400 と 800 で関係が違うか（異質性）
+    #   B2: 別々の試行から作った r どうしの Fisher z 検定（同じ人を含むので近似）
+    #   B1: 人を対にしてリサンプルし、ρ(800) − ρ(400) の分布から CI と p
+    het = []
+    if len(dpis) == 2:
+        d0, d1 = f"{dpis[0]:.0f}", f"{dpis[1]:.0f}"
+        for band in bands:
+            for ck, cl, wd in COORD:
+                x0 = np.array([pm(p, band, dpis[0], ck) for p in people]); x1 = np.array([pm(p, band, dpis[1], ck) for p in people])
+                for pk, pl, good in PERF:
+                    g = lambda L, st: next(r for r in L if r["stratum"] == st and r["band"] == band
+                                           and r["coord"] == ck and r["perf"] == pk)
+                    b0, b1_, bp = g(all_b2, d0), g(all_b2, d1), g(all_b2, "pooled")
+                    z = np.nan; pz = np.nan
+                    if np.isfinite(b0["r"]) and np.isfinite(b1_["r"]) and b0["df"] > 2 and b1_["df"] > 2:
+                        z = (np.arctanh(b1_["r"]) - np.arctanh(b0["r"])) / np.sqrt(1 / (b0["df"] - 1) + 1 / (b1_["df"] - 1))
+                        pz = float(2 * stats.norm.sf(abs(z)))
+                    y0 = np.array([pm(p, band, dpis[0], pk) for p in people]); y1 = np.array([pm(p, band, dpis[1], pk) for p in people])
+                    ok = np.isfinite(x0) & np.isfinite(x1) & np.isfinite(y0) & np.isfinite(y1)
+                    i = rng.integers(0, ok.sum(), (a.n_boot, ok.sum()))
+                    X0, X1, Y0, Y1 = x0[ok][i], x1[ok][i], y0[ok][i], y1[ok][i]
+                    rk = lambda M: stats.rankdata(M, axis=1)
+                    dd = _rowcorr(rk(X1), rk(Y1)) - _rowcorr(rk(X0), rk(Y0))
+                    dd = dd[np.isfinite(dd)]
+                    c0, c1, cp = g(all_b1, d0), g(all_b1, d1), g(all_b1, "pooled")
+                    het.append({"band": band, "coord": ck, "clab": cl, "perf": pk, "plab": pl, "good": good,
+                                "b1_rho400": c0["rho"] * good, "b1_rho800": c1["rho"] * good, "b1_pooled": cp["rho"] * good,
+                                "b1_diff": (c1["rho"] - c0["rho"]) * good,
+                                "b1_diff_p": float(min(1, 2 * min(np.mean(dd <= 0), np.mean(dd >= 0)))) if len(dd) else np.nan,
+                                "b2_r400": b0["r"] * good, "b2_r800": b1_["r"] * good, "b2_pooled": bp["r"] * good,
+                                "b2_diff": (b1_["r"] - b0["r"]) * good if np.isfinite(z) else np.nan, "b2_diff_p": pz,
+                                "b2_p400": b0["p"], "b2_p800": b1_["p"], "b2_ppool": bp["p"]})
+        for band in bands:
+            for key in ("b1_diff_p", "b2_diff_p"):
+                idx = [i for i, r in enumerate(het) if r["band"] == band]
+                for i, qq in zip(idx, bh([het[i][key] for i in idx])):
+                    het[i][key.replace("_p", "_q")] = float(qq)
 
     def save(L, name):
         with open(os.path.join(pout, name), "w", newline="", encoding="utf-8") as f:
@@ -409,67 +471,112 @@ def main():
             for r in L:
                 w.writerow(r)
     save(all_b1, "b1_between.csv"); save(all_b2, "b2_within_condition.csv"); save(all_b3, "b3_dpi_change.csv")
+    save(skill_rows, "skill_by_dpi.csv")
+    if het:
+        save(het, "dpi_heterogeneity.csv")
 
-    lg("\n## 2. 協調とエイムの質の関係\n")
-    lg("符号は「良い向き」にそろえた（+ = その協調の指標が大きいほどエイムが良い）。"
-       "q = 帯域ごとの BH-FDR（協調 10 × 質 12 = 120 検定）。\n")
+    lg("\n## 2. 協調とエイムの質の関係（DPI の層ごと）\n")
+    lg("層: 400 = 400 の試行だけ、800 = 800 の試行だけ、pooled = 400 と 800 をまとめる（DPI の差そのものは除く）。"
+       "符号は「良い向き」にそろえた（+ = その協調の指標が大きいほどエイムが良い）。"
+       f"q = (層 × 帯域) ごとの BH-FDR（協調 {len(COORD)} × 質 {len(PERF)} = {len(COORD) * len(PERF)} 検定）。\n")
+    lg("\n### 層ごとの要約（p < 0.05 の組の数 / 偶然に期待される数、最小の q）\n")
+    summ = []
+    for lev, L in (("B1 人物間", all_b1), ("B2 条件内", all_b2), ("B3 Δ", all_b3)):
+        for key in sorted({(r["stratum"], r["band"]) for r in L}, key=lambda k: (k[1] != "slow", k[0])):
+            x = [r for r in L if (r["stratum"], r["band"]) == key and np.isfinite(r["p"])]
+            summ.append({"lev": lev, "stratum": key[0], "band": key[1], "n_tests": len(x),
+                         "n_sig": sum(r["p"] < 0.05 for r in x), "expect": 0.05 * len(x),
+                         "min_q": min(r["q"] for r in x), "n_obs": x[0]["n"] if x else np.nan})
+    lg(md(summ, [("水準", "lev"), ("層", "stratum"), ("帯域", "band"), ("観測数", "n_obs", "{:.0f}"),
+                 ("検定", "n_tests", "{:.0f}"), ("p<0.05", "n_sig", "{:.0f}"), ("期待", "expect", "{:.1f}"),
+                 ("最小 q", "min_q", "{:.3f}")]))
     for title, L, rk in (("B1 人物間（人の平均どうし、9 人）", all_b1, "rho_good"),
                          ("B2 条件内（試行間のばらつきどうし、残差相関）", all_b2, "r_good"),
                          ("B3 DPI による変化どうし（Δ800−400、9 人）", all_b3, "rho_good")):
         lg(f"\n### {title}\n")
-        for band in bands:
-            lg(f"\n**{band}**（行 = 協調、列 = エイムの質。値 = 相関、* = p < 0.05、** = q < 0.10）\n")
+        for key in sorted({(r["stratum"], r["band"]) for r in L}, key=lambda k: (k[1] != "slow", k[0])):
+            lg(f"\n**{key[1]} / 層 {key[0]}**（行 = 協調、列 = エイムの質。* = p < 0.05、** = q < 0.10）\n")
             hdr = "| 協調 \\ 質 | " + " | ".join(pl for _, pl, _ in PERF) + " |\n|" + "---|" * (len(PERF) + 1) + "\n"
             for ck, cl, _ in COORD:
                 hdr += f"| {cl} |"
                 for pk, _, _ in PERF:
-                    r = next(x for x in L if x["band"] == band and x["coord"] == ck and x["perf"] == pk)
+                    r = next(x for x in L if (x["stratum"], x["band"]) == key and x["coord"] == ck and x["perf"] == pk)
                     mark = "**" if r.get("q", 1) < 0.10 else ("*" if r["p"] < 0.05 else "")
                     hdr += f" {fmt(r[rk], '{:+.2f}')}{mark} |"
                 hdr += "\n"
             lg(hdr)
-        top = sorted([x for x in L if np.isfinite(x["p"])], key=lambda x: x["p"])[:12]
-        lg("\n上位（p の小さい順）:\n")
-        cols = [("帯域", "band"), ("協調", "clab"), ("質", "plab"), ("n", "n", "{:.0f}"),
-                ("相関（良い向き）", rk, "{:+.2f}"), ("CI 下", "lo", "{:+.2f}"), ("CI 上", "hi", "{:+.2f}"),
-                ("p", "p", "{:.4f}"), ("q", "q", "{:.3f}")]
-        for r in top:                                    # CI も良い向きにそろえる
-            if r["good"] < 0:
-                r["lo"], r["hi"] = -r["hi"], -r["lo"]
-        lg(md(top, cols))
+        top = sorted([x for x in L if np.isfinite(x["p"])], key=lambda x: x["p"])[:15]
+        lg("\n上位（全層、p の小さい順。CI は良い向きにそろえた）:\n")
+        disp = []
         for r in top:
-            if r["good"] < 0:
-                r["lo"], r["hi"] = -r["hi"], -r["lo"]
+            lo, hi = (r["lo"], r["hi"]) if r["good"] > 0 else (-r["hi"], -r["lo"])
+            disp.append({**r, "lo_g": lo, "hi_g": hi})
+        lg(md(disp, [("層", "stratum"), ("帯域", "band"), ("協調", "clab"), ("質", "plab"), ("n", "n", "{:.0f}"),
+                     ("相関（良い向き）", rk, "{:+.2f}"), ("CI 下", "lo_g", "{:+.2f}"), ("CI 上", "hi_g", "{:+.2f}"),
+                     ("p", "p", "{:.4f}"), ("q", "q", "{:.3f}")]))
 
-    plots(R, all_b1, all_b2, all_b3, people, bands, dpis, pout, cm)
-    json.dump({"perf_summary": desc, "b1": all_b1, "b2": all_b2, "b3": all_b3},
+    if het:
+        lg("\n### 400 と 800 で関係が違うか（異質性）\n")
+        lg("B2: r(800) − r(400) の Fisher z 検定（同じ人を含むので近似）。B1: 人を対にしたブートストラップ。"
+           "q = 帯域ごとの BH-FDR（110 検定）。下は B2 の差の p が小さい順の 15 組。\n")
+        hs = sorted([h for h in het if np.isfinite(h["b2_diff_p"])], key=lambda h: h["b2_diff_p"])[:15]
+        lg(md(hs, [("帯域", "band"), ("協調", "clab"), ("質", "plab"),
+                   ("B2 r400", "b2_r400", "{:+.2f}"), ("B2 r800", "b2_r800", "{:+.2f}"), ("B2 pooled", "b2_pooled", "{:+.2f}"),
+                   ("差 p", "b2_diff_p", "{:.4f}"), ("差 q", "b2_diff_q", "{:.3f}"),
+                   ("B1 ρ400", "b1_rho400", "{:+.2f}"), ("B1 ρ800", "b1_rho800", "{:+.2f}"), ("B1 差 p", "b1_diff_p", "{:.3f}")]))
+        n2 = sum(h["b2_diff_p"] < 0.05 for h in het if np.isfinite(h["b2_diff_p"]))
+        n1 = sum(h["b1_diff_p"] < 0.05 for h in het if np.isfinite(h["b1_diff_p"]))
+        lg(f"\n差の p < 0.05: B2 {n2} / {len(het)} 組、B1 {n1} / {len(het)} 組（偶然に期待される数 {0.05 * len(het):.0f}）。"
+           f"最小 q: B2 {min(h['b2_diff_q'] for h in het):.3f}、B1 {min(h['b1_diff_q'] for h in het):.3f}\n")
+
+        lg("\n### 練度（Kendall τ、良い向き）の層ごとの値\n")
+        st = []
+        for band in bands:
+            for pk, pl, good in PERF:
+                row = {"band": band, "plab": pl}
+                for sname, _ in strata:
+                    r = next(x for x in skill_rows if x["stratum"] == sname and x["band"] == band and x["perf"] == pk)
+                    row[f"t_{sname}"] = r["tau"]; row[f"p_{sname}"] = r["p"]; row[f"q_{sname}"] = r["q"]
+                st.append(row)
+        cols = [("帯域", "band"), ("質", "plab")]
+        for sname, _ in strata:
+            cols += [(f"τ {sname}", f"t_{sname}", "{:+.2f}"), (f"p {sname}", f"p_{sname}", "{:.3f}"), (f"q {sname}", f"q_{sname}", "{:.2f}")]
+        lg(md(st, cols))
+
+    plots(R, all_b1, all_b2, all_b3, people, bands, dpis, pout, cm, [s for s, _ in strata])
+    json.dump({"perf_summary": desc, "b1": all_b1, "b2": all_b2, "b3": all_b3, "skill": skill_rows, "heterogeneity": het},
               open(os.path.join(pout, "perf_coordination.json"), "w", encoding="utf-8"),
               ensure_ascii=False, indent=1, default=C._jsonable)
     lg(f"\n→ {pout}")
     logf.close()
 
 
-def plots(R, b1, b2, b3, people, bands, dpis, pout, cm):
+def plots(R, b1, b2, b3, people, bands, dpis, pout, cm, strata):
     plt = C.setup_plot()
-    # 図 1: ヒートマップ（B1 / B2 / B3 × 帯域）
-    for name, L, rk in (("fig1_between", b1, "rho_good"), ("fig2_within_condition", b2, "r_good"),
-                        ("fig3_dpi_change", b3, "rho_good")):
-        fig, axes = plt.subplots(1, len(bands), figsize=(8.5 * len(bands), 5.2), squeeze=False)
-        for ax, band in zip(axes[0], bands):
-            M = np.array([[next(x for x in L if x["band"] == band and x["coord"] == ck and x["perf"] == pk)[rk]
-                           for pk, _, _ in PERF] for ck, _, _ in COORD])
-            im = ax.imshow(M, cmap="RdBu_r", vmin=-1, vmax=1, aspect="auto")
-            for i, (ck, _, _) in enumerate(COORD):
-                for j, (pk, _, _) in enumerate(PERF):
-                    r = next(x for x in L if x["band"] == band and x["coord"] == ck and x["perf"] == pk)
-                    mark = "**" if r.get("q", 1) < 0.10 else ("*" if r["p"] < 0.05 else "")
-                    ax.text(j, i, f"{M[i, j]:+.2f}{mark}" if np.isfinite(M[i, j]) else "–",
-                            ha="center", va="center", fontsize=6.5)
-            ax.set_xticks(range(len(PERF))); ax.set_xticklabels([pl for _, pl, _ in PERF], rotation=40, ha="right", fontsize=7)
-            ax.set_yticks(range(len(COORD))); ax.set_yticklabels([cl for _, cl, _ in COORD], fontsize=7.5)
-            ax.set_title(f"{band}（+ = 協調の指標が大きいほどエイムが良い。* p<.05、** q<.10）", fontsize=9)
-        fig.colorbar(im, ax=axes[0].tolist(), shrink=.8)
-        fig.savefig(os.path.join(pout, f"{name}.png"), dpi=130, bbox_inches="tight"); plt.close(fig)
+    # 図 1〜3: ヒートマップ（行 = 層、列 = 帯域）
+    for name, L, rk, sts in (("fig1_between", b1, "rho_good", strata), ("fig2_within_condition", b2, "r_good", strata),
+                             ("fig3_dpi_change", b3, "rho_good", ["delta"])):
+        fig, axes = plt.subplots(len(sts), len(bands), figsize=(8.5 * len(bands), 4.6 * len(sts)), squeeze=False)
+        for i, st in enumerate(sts):
+            for ax, band in zip(axes[i], bands):
+                sel = lambda ck, pk: next(x for x in L if x["stratum"] == st and x["band"] == band
+                                          and x["coord"] == ck and x["perf"] == pk)
+                M = np.array([[sel(ck, pk)[rk] for pk, _, _ in PERF] for ck, _, _ in COORD])
+                im = ax.imshow(M, cmap="RdBu_r", vmin=-1, vmax=1, aspect="auto")
+                for a_, (ck, _, _) in enumerate(COORD):
+                    for b_, (pk, _, _) in enumerate(PERF):
+                        r = sel(ck, pk)
+                        mark = "**" if r.get("q", 1) < 0.10 else ("*" if r["p"] < 0.05 else "")
+                        ax.text(b_, a_, f"{M[a_, b_]:+.2f}{mark}" if np.isfinite(M[a_, b_]) else "–",
+                                ha="center", va="center", fontsize=6.5)
+                ax.set_xticks(range(len(PERF)))
+                ax.set_xticklabels([pl for _, pl, _ in PERF] if i == len(sts) - 1 else [""] * len(PERF),
+                                   rotation=40, ha="right", fontsize=7)
+                ax.set_yticks(range(len(COORD))); ax.set_yticklabels([cl for _, cl, _ in COORD], fontsize=7.5)
+                lab = {"pooled": "400+800", "delta": "Δ800−400"}.get(st, f"{st} DPI のみ")
+                ax.set_title(f"{band} / {lab}（+ = 協調の指標が大きいほど良い。* p<.05、** q<.10）", fontsize=9)
+        fig.colorbar(im, ax=axes.ravel().tolist(), shrink=.6)
+        fig.savefig(os.path.join(pout, f"{name}.png"), dpi=120, bbox_inches="tight"); plt.close(fig)
 
     # 図 4: 質の指標の人 × DPI（帯域ごと）
     fig, axes = plt.subplots(len(bands), len(PERF), figsize=(2.2 * len(PERF), 2.6 * len(bands)), squeeze=False)
