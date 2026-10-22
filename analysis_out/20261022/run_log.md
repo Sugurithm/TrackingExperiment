@@ -193,3 +193,22 @@ PYTHONIOENCODING=utf-8 .venv/Scripts/python.exe aim_eval/freq_decomp.py     --co
 - 静止試行は参加者の `desk_frame.json` を使って読み直し、課題外の帯域のノイズ床に使う。
 - 途中で決めたこと: 課題外の帯域の下端を 1.2 Hz 固定から「最高の入力周波数 + 0.4 Hz」（fast は 1.5 Hz）に変えた。fast で入力帯域の端（1.25 Hz）がピークとして拾われ、Welch の漏れと判断したため。
 - 周波数ごとの協調 ↔ 追従の p は周波数を独立とみなした近似。試行ごとに周波数を平均した確認は、短い Python で計算した（`report_freq.md` §8 の表、ファイルとしては保存していない）。
+
+## 10. 追補 3（2026-10-23）: C-1 外れた瞬間 / C-4 2〜4 Hz の修正
+
+結果は [`report_corrections.md`](report_corrections.md)。
+
+```bash
+# freq_decomp.py（§9）のあとに実行（freq_decomp/per_bin.csv を使う）。約 40 s
+PYTHONIOENCODING=utf-8 .venv/Scripts/python.exe aim_eval/corrections.py     --config analysis_out/20261022/config_used.py --out analysis_out/20261022     > analysis_out/20261022/corrections_stdout.log
+#   既定: --prelim prelim_relaxed --n-boot 5000 --seed 0
+```
+
+- `aim_eval/corrections.py`（新規、sha256 先頭 `1ead4cc8352bc62e`）。既存コードは変更していない。
+- 入力:
+  - `between/trials.csv`（カメラ − マウスの遅れ mouse_lag_ms）
+  - `freq_decomp/per_bin.csv`（試行ごとの課題の帯域での分担とカメラ / マウスのゲイン）
+  - `prelim_relaxed/trials_prelim.csv`（除外）
+  - 各試行の task.csv・rs_joints.npz
+- すべての集計を DPI の層（400 / 800 / まとめ）に分けて出力した（`stratum` 列）。
+- 画面の軸とマウス（机）の軸の向きが一致していることを、事前に 2 試行で確かめた（速度の相関 +1.00）。

@@ -6,6 +6,7 @@
 - 実行の手順と設定は [`run_log.md`](run_log.md)
 - **追補（2026-10-23）**: エイムの質（正確さ・滑らかさ・安定性）と協調の関係は [`report_perf.md`](report_perf.md)
 - **追補 2（2026-10-23）**: 入力周波数ごとの分解（周波数別の追従・分担・関節間の位相・課題外の修正）は [`report_freq.md`](report_freq.md)
+- **追補 3（2026-10-23）**: C-1 ターゲットから外れた瞬間の関節の動き / C-4 2〜4 Hz の修正の出どころ（400・800 別）は [`report_corrections.md`](report_corrections.md)
 
 ---
 
