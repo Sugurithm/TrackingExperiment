@@ -87,6 +87,11 @@ def plan(cfg, lg):
         trials = C.list_trials(d) if ok else []
         if not getattr(cfg, "INCLUDE_STATIC", True):
             trials = [t for t in trials if t[1].get("task", {}).get("kind") == "track"]
+        bands = getattr(cfg, "BANDS", None)
+        if bands:                      # 静止は帯域を持たないので残す
+            trials = [t for t in trials
+                      if t[1].get("task", {}).get("kind") != "track"
+                      or t[1].get("task", {}).get("band") in bands]
         sess = json.load(open(os.path.join(d, "session.json"), encoding="utf-8")) if ok else {}
         rows.append({"dir": d, "entry": e, "ok": ok, "trials": trials,
                      "db3": sum(1 for t, _ in trials if os.path.exists(os.path.join(t, "session.db3"))),
@@ -96,17 +101,28 @@ def plan(cfg, lg):
                      "dpi": e.get("dpi") or sess.get("config", {}).get("mouse_dpi"),
                      "dpi_rec": sess.get("config", {}).get("mouse_dpi")})
     lg("\n## plan 対象の確認\n")
+    bands = getattr(cfg, "BANDS", None)
+    if bands:
+        lg(f"帯域を {', '.join(bands)} に絞っています（他の帯域は推定も解析もしません）。\n")
+    if not getattr(cfg, "INCLUDE_STATIC", True):
+        lg("> **静止試行を外しています**。ノイズ床が測れないので R（時間の交代）の信頼性を"
+           "判定できません。静止は 10 秒なので、含めることを勧めます。\n")
     tab = []
     for r in rows:
         state = ("session.json なし" if not r["ok"] else
                  ("OK（推定済み）" if r["done"] == len(r["trials"]) and r["trials"] else
                   (f"推定待ち {len(r['trials']) - r['done']} 本" if r["db3"] else ".db3 なし")))
+        kinds = [t[1].get("task", {}).get("kind") for t in r["trials"]]
         tab.append({"s": os.path.basename(r["dir"]), "p": r["participant"],
                     "dpi": f"{r['dpi']:g}" if r["dpi"] else "–",
                     "rec": f"{r['dpi_rec']:g}" if r["dpi_rec"] else "–",
-                    "n": len(r["trials"]), "db3": r["db3"], "done": r["done"], "state": state})
+                    "n": len(r["trials"]),
+                    "what": "，".join(sorted({(t[1].get("task", {}).get("band") or "静止")
+                                              for t in r["trials"]})),
+                    "db3": r["db3"], "done": r["done"], "state": state})
     lg(C.md_table(tab, [("セッション", "s"), ("参加者", "p"), ("DPI（指定）", "dpi"),
-                        ("DPI（記録時）", "rec"), ("試行", "n", "{:.0f}"), (".db3", "db3", "{:.0f}"),
+                        ("DPI（記録時）", "rec"), ("試行", "n", "{:.0f}"), ("内訳", "what"),
+                        (".db3", "db3", "{:.0f}"),
                         ("推定済み", "done", "{:.0f}"), ("状態", "state")]))
     for r in rows:
         if r["ok"] and r["dpi"] and r["dpi_rec"] and abs(r["dpi"] - r["dpi_rec"]) > 1e-6:

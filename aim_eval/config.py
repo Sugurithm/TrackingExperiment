@@ -11,20 +11,30 @@ SESSIONS に解析したいセッションのフォルダを並べる。**ここ
 """
 
 SESSIONS = [
-    dict(dir=r"recordings/aim_Keito400_20261021_170947",  participant="Keito", dpi=400),
-    dict(dir=r"recordings/aim_Keito800_20261021_171605",  participant="Keito", dpi=800),
-    dict(dir=r"recordings/aim_Kosuke400_20261021_172948",  participant="Kosuke", dpi=400),
-    dict(dir=r"recordings/aim_Kosuke800_20261021_173700",  participant="Kosuke", dpi=800),
-    dict(dir=r"recordings/aim_Suguru400_20261021_175327",  participant="Suguru", dpi=400),
-    dict(dir=r"recordings/aim_Suguru800_20261021_175931",  participant="Suguru", dpi=800),
-    # dict(dir=r"recordings/aim_P02_400_...", participant="P02", dpi=400),
+    dict(dir=r"recordings/aim_kakeru400_20261022_123951",   participant="Kakeru",  dpi=400),
+    dict(dir=r"recordings/aim_kakeru800_20261022_123338",   participant="Kakeru",  dpi=800),
+    dict(dir=r"recordings/aim_xin400_20261022_125957",  participant="xin", dpi=400),
+    dict(dir=r"recordings/aim_xin800_20261022_125327",  participant="xin", dpi=800),
+    dict(dir=r"recordings/aim_Yuya400_20261022_134407",  participant="Yuya", dpi=400),
+    dict(dir=r"recordings/aim_Yuya800_20261022_133738",  participant="Yuya", dpi=800),
+    dict(dir=r"recordings/aim_Syou400_20261022_135724",  participant="Syou", dpi=400),
+    dict(dir=r"recordings/aim_Syou800_20261022_135037",  participant="Syou", dpi=800)
 ]
 
 OUT = "analysis"            # 出力先（参加者ごとのフォルダと between/ がこの下にできる）
 
+# ---- 解析する試行を絞る ----
+# BANDS … 使う帯域。None = 全部。["slow"] なら fast を処理しない（推定も解析もしない）
+#   1 帯域だけにすると「帯域の効果」は見られないが、DPI の効果とプレイヤー間の比較はできる。
+BANDS = ["slow"]
+
 # ---- step1 関節位置の推定（時間がかかるのはここだけ。1 試行 3〜7 分）----
 SKIP_DONE = True            # joints/rs_joints.npz がある試行は飛ばす
-INCLUDE_STATIC = True       # trial_00_static_pre も推定する（ジッタの測定に使う）
+# 静止試行（trial_00_static_pre）を含めるか。
+#   **True を強く推奨**。静止はノイズ床の測定に使い、これが無いと R（時間の交代）の信頼性を
+#   判定できなくなる（動いていない成分のノイズが混ざり、R が「同時」側に偏る）。
+#   10 秒しかないので stride 2 なら 1 本 30 秒ほどで終わる。
+INCLUDE_STATIC = True
 VIDEO = "all"               # 確認動画: "all"（全試行）/ "first"（各セッションの最初の本番試行）/ "none"
 VIDEO_FPS = 20              # 確認動画の fps（はじめからこの fps で書き出す。ffmpeg は不要）
 FORCE_VIDEO = False         # すでに動画がある試行も作り直す

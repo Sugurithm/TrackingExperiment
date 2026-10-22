@@ -649,10 +649,11 @@ def joint_indices(tr, end=None, env_fc=0.5):
     per_bin = []
     for k, ax in enumerate(AX):
         nb, f, _ = tr.freqs(ax)
-        amp = {}
+        amp, pwr = {}, {}
         for p in names:
             sig, noi, A = bin_power(V[p][:, k], tr.T, nb)
-            pw[p] += float(np.nansum(np.maximum(sig - noi, 0)))
+            pwr[p] = np.maximum(sig - noi, 0)           # ビンごとのノイズを引いたパワー
+            pw[p] += float(np.nansum(pwr[p]))
             pw_noise[p] += float(np.nansum(noi))
             amp[p] = A
         sigE, noiE, AE = bin_power(E[:, k], tr.T, nb)
@@ -664,6 +665,7 @@ def joint_indices(tr, end=None, env_fc=0.5):
                 Cs.append(num / den); Cw.append(den)
             per_bin.append({"axis": ax, "n": int(nb[i]), "f_hz": float(f[i]), "snr": snr,
                             "C": num / den if den > 0 else np.nan,
+                            "_pwr": {p: float(pwr[p][i]) for p in names},
                             **{p: float(np.abs(amp[p][i])) for p in names}})
     tot = sum(pw.values())
     share = {p: (pw[p] / tot if tot > 0 else np.nan) for p in names}
@@ -682,19 +684,28 @@ def joint_indices(tr, end=None, env_fc=0.5):
     # 1 に近い … どの速さの動きも同じ分担（全体が同じように動いている）
     # 小さい   … 速さごとに担当が分かれる（遅い動きは肩、速い動きは手首 のような役割分担）
     # 入力ビンの振幅だけを使うので SNR が高く、時間領域の R より安定して測れる。
-    nb_eff, nb_w = [], []
+    # 分子（ビンごとの N_eff の平均）と分母（全体の N_eff）は **同じビン**から作る。
+    # 片方だけ SNR で絞ると、絞られたビンのパワーが分母にだけ残って S が偏る。
+    nb_eff, nb_w, pw_sel = [], [], {p: 0.0 for p in names}
     for r in per_bin:
-        v = np.array([r[p] for p in names], float)
+        v = np.array([r["_pwr"][p] for p in names], float)
         if np.isfinite(r.get("snr", np.nan)) and r["snr"] > SNR_MIN and v.sum() > 0:
-            q = v ** 2 / np.sum(v ** 2)                  # そのビンでの分担（パワー比）
-            nb_eff.append(1 / np.sum(q ** 2)); nb_w.append(r["snr"])
+            q = v / v.sum()                              # そのビンでの分担（パワー比）
             r["N_eff_bin"] = float(1 / np.sum(q ** 2))
-    if len(nb_eff) >= 2 and np.isfinite(res["N_eff"]) and res["N_eff"] > 0:
+            nb_eff.append(r["N_eff_bin"]); nb_w.append(r["snr"])
+            for j, p in enumerate(names):
+                pw_sel[p] += v[j]
+    tot_sel = sum(pw_sel.values())
+    if len(nb_eff) >= 2 and tot_sel > 0:
+        q = np.array([pw_sel[p] / tot_sel for p in names])
+        res["N_eff_sel"] = float(1 / np.sum(q ** 2))     # 同じビンから作った全体の N_eff
         res["N_eff_bin_mean"] = float(np.average(nb_eff, weights=nb_w))
-        res["S"] = float(res["N_eff_bin_mean"] / res["N_eff"])
+        res["S"] = float(res["N_eff_bin_mean"] / res["N_eff_sel"])
         res["S_n_bins"] = len(nb_eff)
+        res["S_share_sel"] = {p: float(pw_sel[p] / tot_sel) for p in names}
     else:
-        res["S"] = res["N_eff_bin_mean"] = np.nan; res["S_n_bins"] = len(nb_eff)
+        res["S"] = res["N_eff_bin_mean"] = res["N_eff_sel"] = np.nan
+        res["S_n_bins"] = len(nb_eff)
 
     # --- R の前に、成分ごとの時間領域 SNR（静止試行のノイズ床と比べる）
     floor = static_floor(tr)
@@ -790,4 +801,3 @@ def static_floor(tr, cache=True):
         except Exception:
             pass
     return floor
-

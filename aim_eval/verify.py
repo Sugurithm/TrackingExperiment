@@ -63,7 +63,7 @@ def main():
             f"{g['M']['N_eff']:.2f}", "> 3.0")
         chk(f"[{dpi}] 手首依存の主役が「手の回転」", g["W"]["dominant"] == "hand",
             C.PARTLABEL.get(g["W"]["dominant"], "?"), "手の回転（手首）")
-        chk(f"[{dpi}] 交代で S が 1 を下回る", g["Q"]["S"] < 0.95, f"{g['Q']['S']:.2f}", "< 0.95")
+        chk(f"[{dpi}] 交代で S が明確に小さい", g["Q"]["S"] < 0.80, f"{g['Q']['S']:.2f}", "< 0.80")
         chk(f"[{dpi}] 同時で S が 1 付近", g["M"]["S"] > 0.95, f"{g['M']['S']:.2f}", "> 0.95")
         chk(f"[{dpi}] 相殺で C が 1 を大きく超える", g["P"]["C"] > 2.0, f"{g['P']['C']:.2f}", "> 2.0")
         chk(f"[{dpi}] 同時で C が 1 付近", g["M"]["C"] < 1.3, f"{g['M']['C']:.2f}", "< 1.3")
@@ -71,7 +71,7 @@ def main():
     # DPI によらず指標が同じか（400 と 1600 の差）
     if len(a.dpi) >= 2:
         d0, d1 = a.dpi[0], a.dpi[-1]
-        for key, tol, lab in (("N_eff", 0.5, "N_eff"), ("S", 0.08, "S"), ("C", 0.5, "C")):
+        for key, tol, lab in (("N_eff", 0.5, "N_eff"), ("S", 0.10, "S"), ("C", 0.5, "C")):
             diff = max(abs(got[(d0, n)][0][key] - got[(d1, n)][0][key]) for n, _, _, _ in CASES)
             chk(f"{lab} が DPI でほぼ変わらない", diff <= tol, f"最大差 {diff:.2f}", f"≤ {tol}")
 
