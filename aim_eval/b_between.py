@@ -32,7 +32,17 @@ AUX = [("ishare_trunk", "体幹のシェア"), ("ishare_upperarm", "上腕のシ
        ("fb_wrist_hz", "手首の帯域 [Hz]"), ("pc1", "PC1 の寄与率"),
        ("n_for_90pct", "90 % に必要な成分数"),
        ("ang_elbow_range", "肘の角度の範囲 [deg]"), ("ang_wrist_range", "手首の角度の範囲 [deg]"),
-       ("azrange_upperarm", "上腕の方位角 [deg]"), ("azrange_forearm", "前腕の方位角 [deg]")]
+       ("azrange_upperarm", "上腕の方位角 [deg]"), ("azrange_forearm", "前腕の方位角 [deg]"),
+       # a8 自由度ごと（肩の 3 自由度を分けたもの）
+       ("dof_cancel", "相殺指数（自由度）"),
+       ("dofmm_sh_elev", "肩・仰角の寄与 [mm]"), ("dofmm_sh_azim", "肩・方位の寄与 [mm]"),
+       ("dofmm_hum_rot", "肩・回旋の寄与 [mm]"), ("dofmm_el_flex", "肘・屈曲の寄与 [mm]"),
+       ("dofmm_wr_flex", "手首・屈曲の寄与 [mm]"), ("dofmm_wr_dev", "手首・偏位の寄与 [mm]"),
+       ("dofsd_sh_azim", "肩・方位 SD [deg]"), ("dofsd_hum_rot", "肩・回旋 SD [deg]"),
+       ("dofsd_el_flex", "肘・屈曲 SD [deg]"), ("dofsd_wr_flex", "手首・屈曲 SD [deg]"),
+       ("dofsd_wr_dev", "手首・偏位 SD [deg]"),
+       ("dofr_hum_rot_el_flex", "r(肩回旋, 肘屈曲)"),
+       ("dofr_sh_elev_sh_azim", "r(肩仰角, 肩方位)")]
 PERF = [("rms_2d", "RMS 誤差 [mm]"), ("on_target_pct", "on-target [%]"),
         ("fb_x_hz", "追従の帯域 fb [Hz]"), ("remnant_x", "remnant"), ("delay_x_ms", "実効遅れ [ms]")]
 JOINTS = ["shoulder", "elbow", "wrist", "mcp3"]

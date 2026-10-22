@@ -23,11 +23,11 @@ HERE = os.path.dirname(os.path.abspath(__file__))
 ROOT = os.path.dirname(HERE)
 sys.path.insert(0, HERE)
 import common as C                                      # noqa: E402
-import a0_quality, a1_indices, a2_contribution, a3_coupling, a4_joint_freq, a5_describing, a6_task, a7_angles  # noqa: E402
+import a0_quality, a1_indices, a2_contribution, a3_coupling, a4_joint_freq, a5_describing, a6_task, a7_angles, a8_dof  # noqa: E402
 import step1_joints, w_within, b_between                # noqa: E402
 
 MODULES = [a0_quality, a1_indices, a2_contribution, a3_coupling,
-           a4_joint_freq, a5_describing, a6_task, a7_angles]
+           a4_joint_freq, a5_describing, a6_task, a7_angles, a8_dof]
 STEPS = ["joints", "video", "trials", "within", "between"]
 
 
@@ -154,7 +154,7 @@ def step_trials(cfg, rows, out, lg):
         for t in trials:
             if not os.path.exists(os.path.join(t, "joints", "rs_joints.npz")):
                 continue
-            fresh = os.path.exists(os.path.join(t, "eval", "a7_angles.json")) and not cfg.FORCE
+            fresh = os.path.exists(os.path.join(t, "eval", "a8_dof.json")) and not cfg.FORCE
             if not fresh:
                 t0 = time.time()
                 try:

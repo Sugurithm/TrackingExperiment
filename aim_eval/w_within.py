@@ -123,6 +123,19 @@ def collect(trial_dirs):
                 r[f"azrange_{s['seg']}"] = s["az_range_deg"]
             for k, v in t6.get("angles", {}).items():
                 r[f"ang_{k}_range"] = v["range_deg"]; r[f"ang_{k}_sd"] = v["sd_deg"]
+        t7 = _load(d, "a8_dof.json")
+        if t7:
+            r["dof_cancel"] = t7["cancel_index"]; r["dof_cancel_z"] = t7["cancel_z"]
+            r["dof_endpoint_mm"] = t7["endpoint_sd_mm"]
+            r["fk_r2"] = t7.get("fk_r2", np.nan); r["fk_rms_mm"] = t7.get("fk_rms_mm", np.nan)
+            for g, v in t7["group_mm"].items():
+                r[f"dofmm_{g}"] = v
+            for x in t7["dof"]:
+                r[f"dofsd_{x['dof']}"] = x["sd_deg"]
+                r[f"dofmm_{x['dof']}"] = x["only_mm"]
+                r[f"dofsnr_{x['dof']}"] = x["snr"]
+            for x in t7["pairs"]:
+                r[f"dofr_{x['a']}_{x['b']}"] = x["r"]
         rows.append(r)
     return rows
 

@@ -126,12 +126,24 @@ RS_JOINTS = {
 # 実際の列名は  python experiment/mocap_joints.py --list  で確認して書き換える．
 # 2026-10-16 の全身スケルトン（Skeleton 001）: ボーンの位置 = 根元側の関節中心
 #   RUArm = 肩関節中心，RFArm = 肘関節中心，RHand = 手首関節中心
-#   指のマーカーはないので中指付け根（mcp3）は比較しない
+# "mcp3" は**手首より遠位の点**．これがあると手首の角度が出せて RealSense と比べられる．
+#   ボーンマーカー（RHandOut など）でもよい．--list で実際の名前を確かめて書く．
+#   見つからなければ MC_HAND_FALLBACKS を順に探し、それでも無ければ手首の角度は NaN になる．
 MC_JOINTS = {
     "shoulder": ["RUArm"],
     "elbow":    ["RFArm"],
     "wrist":    ["RHand"],
+    "mcp3":     ["RHandOut"],
 }
+# MC_JOINTS["mcp3"] が見つからないときに順に探す名前
+MC_HAND_FALLBACKS = ["RHandOut", "RHand_end", "RHandIn", "RHandThumb", "RIndexFinger1"]
+
+# ── 前腕の回内外（3 点では求まらない自由度） ──────
+# ボーンの回転が書き出されていれば、前腕ボーンと手ボーンの相対回転から求められる．
+# Motive の書き出しで Rotation にチェックが入っていないと出ない（--list で確認できる）．
+MC_FOREARM_BONE   = "RFArm"
+MC_HAND_BONE      = "RHand"
+MC_BONE_LONG_AXIS = 1        # ボーンのローカル長軸（Motive のスケルトンは Y = 1）
 
 # ── compare_joints.py（RealSense と MoCap の比較） ──
 # 比較する組: (RealSense 側の名前, MoCap 側の名前)
@@ -140,8 +152,11 @@ COMPARE_PAIRS = [
     ("elbow", "elbow"),
     ("wrist", "wrist"),
     ("wrist_pose", "wrist"),
+    ("mcp3", "mcp3"),          # MoCap 側に手の点があるときだけ比較される（無ければ自動で飛ばす）
 ]
-SEGMENTS       = [("shoulder", "elbow"), ("elbow", "wrist")]   # 長さが一定のはずの区間（上腕・前腕）
+SEGMENTS       = [("shoulder", "elbow"), ("elbow", "wrist"), ("wrist", "mcp3")]  # 長さが一定のはずの区間
+# compare_joints.py で比べる関節角（mc_joints.npz の ang_names と同じ名前）
+COMPARE_ANGLES = ["el_flex", "wr_flex", "wr_dev"]
 CMP_MAX_GAP    = 0.05       # MoCap の欠損をこれ以上またいで補間しない [s]
 CMP_SYNC_MARGIN = 1.0       # 同期でボードを振った区間の前後これだけは比較に使わない [s]
 CMP_MAX_LAG    = 0.2        # MediaPipe の遅れを探す範囲 ±[s]

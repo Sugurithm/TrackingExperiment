@@ -32,10 +32,19 @@
   前腕の回内外（軸まわりの回旋）は手に 2 点（手首・MCP3）しかないため求まらない。
   手の平面が取れる点（親指 or 小指の MCP）を足すと手首が 2 → 4 自由度になる。
 """
+import importlib.util
 import json
 import os
 import numpy as np
 import common as C
+
+# 角度の定義は experiment/lib/angles.py の 1 本だけを使う（MoCap 側と完全に同じ式にするため）。
+# sys.path に experiment/ を足すと aim_eval の config.py が隠れるので、ファイルを直接読み込む。
+_ANG_PATH = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
+                         "experiment", "lib", "angles.py")
+_spec = importlib.util.spec_from_file_location("aim_eval_angles", _ANG_PATH)
+AN = importlib.util.module_from_spec(_spec)
+_spec.loader.exec_module(AN)
 
 DOF = ["sh_elev", "sh_azim", "hum_rot", "el_flex", "wr_flex", "wr_dev"]
 DOFLABEL = {"sh_elev": "肩・仰角", "sh_azim": "肩・方位", "hum_rot": "肩・回旋",
@@ -44,59 +53,26 @@ DOFGROUP = {"sh_elev": "upperarm", "sh_azim": "upperarm", "hum_rot": "upperarm",
             "el_flex": "forearm", "wr_flex": "hand", "wr_dev": "hand"}
 GROUPDOF = {"upperarm": [0, 1, 2], "forearm": [3], "hand": [4, 5]}
 NEED = ["shoulder", "elbow", "wrist", "mcp3"]
-DOWN = np.array([0.0, 0.0, -1.0])      # 机座標は z = 上なので、下向きは −z
 N_SURR = 200                            # 巡回シフトの回数
 FLOOR_CACHE = "dof_floor.json"
 
 
 # ------------------------------------------------------------------ 幾何
-def _unit(v):
-    return v / np.maximum(np.linalg.norm(v, axis=-1, keepdims=True), 1e-12)
+UP = np.array([0.0, 0.0, 1.0])          # 机座標は z = 上
 
 
 def to_dof(P):
     """机座標の関節位置 {名前: (N,3)} → 関節角 (N,6)[deg] とセグメント長 (3,)[mm]"""
     sh, el, wr, mcp = (P[n] for n in NEED)
-    e1 = _unit(el - sh)        # 上腕
-    e2 = _unit(wr - el)        # 前腕
-    e3 = _unit(mcp - wr)       # 手
     L = np.array([np.nanmedian(np.linalg.norm(el - sh, axis=1)),
                   np.nanmedian(np.linalg.norm(wr - el, axis=1)),
                   np.nanmedian(np.linalg.norm(mcp - wr, axis=1))])
-    sh_elev = np.degrees(np.arccos(np.clip(e1 @ DOWN, -1, 1)))
-    sh_azim = np.degrees(np.arctan2(e1[:, 1], e1[:, 0]))
-    r = _unit(np.cross(np.broadcast_to(DOWN, e1.shape), e1))
-    s = np.cross(e1, r)
-    perp = e2 - np.sum(e2 * e1, axis=1)[:, None] * e1
-    hum_rot = np.degrees(np.arctan2(np.sum(perp * s, axis=1), np.sum(perp * r, axis=1)))
-    el_flex = np.degrees(np.arccos(np.clip(np.sum(e1 * e2, axis=1), -1, 1)))
-    n = _unit(np.cross(e1, e2))        # 腕平面の法線
-    m = _unit(np.cross(n, e2))
-    wr_dev = np.degrees(np.arcsin(np.clip(np.sum(e3 * n, axis=1), -1, 1)))
-    wr_flex = np.degrees(np.arctan2(np.sum(e3 * m, axis=1), np.sum(e3 * e2, axis=1)))
-    A = np.column_stack([sh_elev, _unwrap(sh_azim), _unwrap(hum_rot),
-                         el_flex, _unwrap(wr_flex), wr_dev])
-    return A, L
-
-
-def _unwrap(a):
-    return np.degrees(np.unwrap(np.radians(a)))
+    return AN.dof6(sh, el, wr, mcp, up=UP), L
 
 
 def from_dof(A, L):
     """関節角 (N,6)[deg] → 肩を原点とした手先位置 (N,3)[mm]（順運動学）"""
-    a = np.radians(A)
-    se, sa, hr, ef, wf, wd = (a[:, i] for i in range(6))
-    e1 = np.column_stack([np.sin(se) * np.cos(sa), np.sin(se) * np.sin(sa), -np.cos(se)])
-    r = _unit(np.cross(np.broadcast_to(DOWN, e1.shape), e1))
-    s = np.cross(e1, r)
-    e2 = _unit(np.cos(ef)[:, None] * e1
-               + np.sin(ef)[:, None] * (np.cos(hr)[:, None] * r + np.sin(hr)[:, None] * s))
-    n = _unit(np.cross(e1, e2))
-    m = _unit(np.cross(n, e2))
-    e3 = (np.cos(wd)[:, None] * (np.cos(wf)[:, None] * e2 + np.sin(wf)[:, None] * m)
-          + np.sin(wd)[:, None] * n)
-    return L[0] * e1 + L[1] * e2 + L[2] * e3
+    return AN.from_dof(A, L, up=UP)
 
 
 # ------------------------------------------------------------------ 指標

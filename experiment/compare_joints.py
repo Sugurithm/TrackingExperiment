@@ -39,6 +39,7 @@ matplotlib.use("Agg")
 import matplotlib.pyplot as plt
 
 import config
+from lib import angles as AN
 from lib import io_utils, sync_io
 from lib.geometry import apply, interp_nan, split_ray, velocity
 
@@ -139,6 +140,91 @@ def segment_lengths(rs, mc, use):
 # ══════════════════════════════════════════════════
 #  表示・保存
 # ══════════════════════════════════════════════════
+# ══════════════════════════════════════════════════
+#  関節角の比較
+# ══════════════════════════════════════════════════
+def rs_angles(rs, names_wanted):
+    """RealSense の関節位置から関節角 [deg]．見出し名は mc_joints.npz と同じ．
+
+    el_flex / wr_flex / wr_dev は腕平面だけで決まるので，**鉛直の向きに依らない**．
+    カメラ座標のまま計算してよく，Motive 側の値とそのまま比べられる．
+    """
+    nm = [str(x) for x in rs["names"]]
+    need = ("shoulder", "elbow", "wrist_pose", "wrist", "mcp3")
+    if any(n not in nm for n in need[:3]):
+        return None, []
+    P = rs["P_C"]
+    sh, el = P[:, nm.index("shoulder")], P[:, nm.index("elbow")]
+    wr_pose = P[:, nm.index("wrist_pose")]
+    wr = P[:, nm.index("wrist")] if "wrist" in nm else wr_pose
+    hand = P[:, nm.index("mcp3")] if "mcp3" in nm else None
+    out, got = [], []
+    for a in names_wanted:
+        if a == "el_flex":
+            out.append(AN.elbow_angle(sh, el, wr_pose)); got.append(a)
+        elif a in ("wr_flex", "wr_dev"):
+            if hand is None:
+                continue
+            f, d = AN.wrist_angles(sh, el, wr_pose, hand)
+            out.append(f if a == "wr_flex" else d); got.append(a)
+    return (np.column_stack(out) if out else None), got
+
+
+def compare_angles(rs, mc, t, take_t, use):
+    """RealSense と MoCap の関節角を比べる．MoCap 側に角度が無ければ None．"""
+    wanted = list(getattr(config, "COMPARE_ANGLES", ["el_flex", "wr_flex", "wr_dev"]))
+    mc_names = [str(x) for x in mc.get("ang_names", [])]
+    MC = mc.get("ANG")
+    if MC is None or len(mc_names) == 0 or np.size(MC) == 0:
+        return None
+    A_rs, got = rs_angles(rs, wanted)
+    if A_rs is None:
+        return None
+    rows = []
+    for k, a in enumerate(got):
+        if a not in mc_names:
+            continue
+        q = interp_nan(take_t, mc["t"], MC[:, mc_names.index(a)][:, None],
+                       config.CMP_MAX_GAP)[:, 0]
+        x, y = A_rs[:, k], q
+        ok = use & np.isfinite(x) & np.isfinite(y)
+        if ok.sum() < 100:
+            rows.append(dict(angle=a, n=int(ok.sum())))
+            continue
+        d = x[ok] - y[ok]
+        r = float(np.corrcoef(x[ok], y[ok])[0, 1]) if x[ok].std() > 1e-9 and y[ok].std() > 1e-9 else np.nan
+        rows.append(dict(angle=a, n=int(ok.sum()),
+                         bias_deg=float(np.median(d)),
+                         sd_deg=float(np.std(d - np.median(d))),
+                         rms_without_bias_deg=float(np.sqrt(np.mean((d - np.median(d)) ** 2))),
+                         r=r,
+                         rs_sd_deg=float(x[ok].std()), mc_sd_deg=float(y[ok].std()),
+                         rs_range_deg=float(np.percentile(x[ok], 95) - np.percentile(x[ok], 5)),
+                         mc_range_deg=float(np.percentile(y[ok], 95) - np.percentile(y[ok], 5)),
+                         amp_ratio=float(x[ok].std() / y[ok].std()) if y[ok].std() > 1e-9 else np.nan))
+    return rows
+
+
+def report_angles(rows, pron):
+    if not rows:
+        print("\n[ANGLE] MoCap 側に関節角がありません（mocap_joints.py を実行し直してください）")
+        return
+    print("\n関節角（RealSense vs MoCap）  n    偏り      ばらつき   偏りを除くRMS   相関    振幅比  可動域 RS/MC")
+    for s in rows:
+        if "bias_deg" not in s:
+            print(f"  {s['angle']:>8s}  比較できるフレームが足りません（{s['n']}）")
+            continue
+        print(f"  {s['angle']:>8s} {s['n']:6d} {s['bias_deg']:+8.2f}° {s['sd_deg']:8.2f}° "
+              f"{s['rms_without_bias_deg']:11.2f}°  {s['r']:+7.3f} {s['amp_ratio']:7.2f}  "
+              f"{s['rs_range_deg']:5.1f}/{s['mc_range_deg']:.1f}°")
+    print("  偏りは関節中心と点の取り方の違い（MediaPipe の MCP3 と MoCap の手マーカー）で出る．")
+    print("  **使えるかは「偏りを除く RMS」と「振幅比」で判断する**（偏りは個人内の比較では相殺される）．")
+    if pron is not None and np.isfinite(pron).any():
+        print(f"  参考: 前腕の回内外（MoCap のみ）SD {np.nanstd(pron):.1f}°  "
+              f"可動域 {np.nanpercentile(pron, 95) - np.nanpercentile(pron, 5):.1f}°"
+              "  … RealSense では測れない自由度")
+
+
 def report(results, lengths):
     print("\n関節（RS / MoCap）     n   3次元RMS  偏りを除くRMS  垂直(中央値)  奥行き 平均±SD    遅れ   遅れも除くRMS")
     for (a, b), s in results.items():
@@ -211,6 +297,8 @@ def main():
 
     lengths = segment_lengths(rs, mc, use)
     report(results, lengths)
+    ang_rows = compare_angles(rs, mc, t, take_t, use)
+    report_angles(ang_rows, mc.get("pron"))
 
     out = trial_dir / "compare"
     out.mkdir(exist_ok=True)
@@ -218,7 +306,12 @@ def main():
     io_utils.save_json(out / "summary.json", dict(
         trial=trial_dir.name, calib=calib.name, n_rs_frames=int(len(t)), n_used=int(use.sum()),
         note="誤差はカメラ座標（x 右, y 下, z 奥）．e_ray: 視線方向（正 = RealSense が遠い）．lag_ms: 正 = RealSense が遅れている",
-        joints={f"{a}/{b}": s for (a, b), s in results.items()}, segments=lengths))
+        joints={f"{a}/{b}": s for (a, b), s in results.items()}, segments=lengths,
+        angles=ang_rows,
+        pronation=(dict(sd_deg=float(np.nanstd(mc["pron"])),
+                        range_deg=float(np.nanpercentile(mc["pron"], 95)
+                                        - np.nanpercentile(mc["pron"], 5)))
+                   if mc.get("pron") is not None and np.isfinite(mc.get("pron")).any() else None)))
     frames_all.to_csv(out / "frames.csv", index=False, float_format="%.3f")
     save_plot(out / "compare.png", frames_all, series)
     print(f"[DONE] -> {out}")
