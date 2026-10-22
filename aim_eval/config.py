@@ -11,14 +11,10 @@ SESSIONS に解析したいセッションのフォルダを並べる。**ここ
 """
 
 SESSIONS = [
-    dict(dir=r"recordings/aim_kakeru400_20261022_123951",   participant="Kakeru",  dpi=400),
-    dict(dir=r"recordings/aim_kakeru800_20261022_123338",   participant="Kakeru",  dpi=800),
-    dict(dir=r"recordings/aim_xin400_20261022_125957",  participant="xin", dpi=400),
-    dict(dir=r"recordings/aim_xin800_20261022_125327",  participant="xin", dpi=800),
-    dict(dir=r"recordings/aim_Yuya400_20261022_134407",  participant="Yuya", dpi=400),
-    dict(dir=r"recordings/aim_Yuya800_20261022_133738",  participant="Yuya", dpi=800),
-    dict(dir=r"recordings/aim_Syou400_20261022_135724",  participant="Syou", dpi=400),
-    dict(dir=r"recordings/aim_Syou800_20261022_135037",  participant="Syou", dpi=800)
+    dict(dir=r"recordings/aim_Yuuki400_20261022_1540461",   participant="Yuuki",  dpi=400),
+    dict(dir=r"recordings/aim_Yuuki800_20261022_153317",   participant="Yuuki",  dpi=800),
+    dict(dir=r"recordings/aim_Suzuka400_20261022_155937",  participant="Suzuka", dpi=400),
+    dict(dir=r"recordings/aim_Suzuka800_20261022_155314",  participant="Suzuka", dpi=800)
 ]
 
 OUT = "analysis"            # 出力先（参加者ごとのフォルダと between/ がこの下にできる）
