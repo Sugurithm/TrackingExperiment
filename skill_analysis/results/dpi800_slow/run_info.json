@@ -1,0 +1,11 @@
+{
+ "condition": {
+  "name": "dpi800_slow",
+  "dpi": 800,
+  "band": "slow"
+ },
+ "n_trials": 24,
+ "n_people": 8,
+ "elapsed_s": 18.144808053970337,
+ "aim_eval_common": "aim_eval\\common.py"
+}
