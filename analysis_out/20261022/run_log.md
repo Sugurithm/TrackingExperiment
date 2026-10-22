@@ -177,3 +177,19 @@ PYTHONIOENCODING=utf-8 .venv/Scripts/python.exe aim_eval/perf_coordination.py   
 - 実行コマンドは §8 と同じ（約 1 分）。
 - 改める前の版は `C:\Users\IMURA-~1\AppData\Local\Temp\claude\…\scratchpad\perf_coordination_before_strata.py` に退避したが、作業用の一時領域なので残らない。差分は「§2 の層のループの追加」と「図を層ごとに並べる」だけ。
 - 現在の `aim_eval/perf_coordination.py` の sha256 先頭: `188c049945423b7e`
+
+## 9. 追補 2（2026-10-23）: 入力周波数ごとの分解
+
+結果は [`report_freq.md`](report_freq.md)。
+
+```bash
+# prelim_inference.py（§2 の (5)）のあとに実行。約 40 s
+PYTHONIOENCODING=utf-8 .venv/Scripts/python.exe aim_eval/freq_decomp.py     --config analysis_out/20261022/config_used.py --out analysis_out/20261022     > analysis_out/20261022/freq_stdout.log
+#   既定: --prelim prelim_relaxed --n-boot 5000 --seed 0
+```
+
+- `aim_eval/freq_decomp.py`（新規、sha256 先頭 `f8327fc7ed08cc38`）。既存コードは変更していない。
+- 使う関数: `common.py` の `Trial`、`task_grid`、`contributions`、`spectrum`、`at_bins`、`bin_noise`、`list_trials`。
+- 静止試行は参加者の `desk_frame.json` を使って読み直し、課題外の帯域のノイズ床に使う。
+- 途中で決めたこと: 課題外の帯域の下端を 1.2 Hz 固定から「最高の入力周波数 + 0.4 Hz」（fast は 1.5 Hz）に変えた。fast で入力帯域の端（1.25 Hz）がピークとして拾われ、Welch の漏れと判断したため。
+- 周波数ごとの協調 ↔ 追従の p は周波数を独立とみなした近似。試行ごとに周波数を平均した確認は、短い Python で計算した（`report_freq.md` §8 の表、ファイルとしては保存していない）。
