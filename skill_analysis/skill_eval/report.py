@@ -126,7 +126,7 @@ def write(out, cond, people, tests, used, missing, fg_track, fg_joint, figs, fil
 
     md += "## 1. 要約（p < 0.10 の指標を自動抽出）\n\n"
     md += "### ① ターゲット追従特性\n\n" + _highlights(tests, ("追従精度", "滑らかさ", "軌道修正")) + "\n\n"
-    md += "### ② 上肢関節の協調・分担\n\n" + _highlights(tests, ("関節の寄与", "時間の役割分担")) + "\n\n"
+    md += "### ② 上肢関節の協調・分担\n\n" + _highlights(tests, ("関節の寄与", "時間の役割分担", "動き出しの順序")) + "\n\n"
     flips = [t for t in tests if t["flip"]]
     md += f"### {nm} の影響\n\n"
     md += (f"- {nm} を除くと ρ の符号が変わる、または |Δρ| ≥ 0.3 の指標: "
@@ -172,7 +172,16 @@ def write(out, cond, people, tests, used, missing, fg_track, fg_joint, figs, fil
     md += _group_table(people, tk2) + "\n"
     md += f"![周波数ごとの分担]({_rel(figs['share_by_freq'], out)})\n\n"
     md += f"![時間の役割分担]({_rel(figs['timing'], out)})\n\n"
-    md += "### 3.3 練度との関係\n\n" + _test_table(tests, ("関節の寄与", "時間の役割分担")) + "\n"
+    md += "### 3.3 動き出しの順序（どの関節から動かすか）\n\n"
+    md += ("手先（MCP3）が軸ごとに向きを変える瞬間（＝新しい動きの始まり）をイベントとし、各成分が同じ向きに切り返した時刻との差 τ を測る"
+           "（負 = 手先より先 = その関節から動き出した）。「最初に動く割合」は、関与した成分の中で最初に切り返した成分の割合。"
+           "「先の割合」は 2 成分がどちらも関与したイベントで一方が先だった割合（0.5 = 順序なし）。"
+           "肩・肘は MediaPipe Pose、手首は Hand で推定しており、モデルの平滑化の違いが成分間の見かけの時間差になりうる"
+           "（全員に同じだけ乗るので練度の比較には効かないが、絶対的な順序は割り引いて読む）。\n\n")
+    ik = [k for k, *_ in METRICS if FAMILY[k] == "動き出しの順序"]
+    md += _group_table(people, ik) + "\n"
+    md += f"![動き出しの順序]({_rel(figs['initiation'], out)})\n\n"
+    md += "### 3.4 練度との関係\n\n" + _test_table(tests, ("関節の寄与", "時間の役割分担", "動き出しの順序")) + "\n"
     md += "### 参加者ごと（主な指標）\n\n" + _person_table(people, ["share_trunk", "share_upperarm", "share_forearm", "share_hand",
                                                          "N_eff", "S", "C", "fshift_forearm", "lead_upperarm_ms", "xr_upperarm_forearm"]) + "\n"
 
@@ -206,6 +215,7 @@ def write(out, cond, people, tests, used, missing, fg_track, fg_joint, figs, fil
             "freq_tracking_trials.csv": "入力周波数ごとの追従（ゲイン・遅れ・相対誤差）", "freq_tracking_group.csv": "同・群平均",
             "freq_joint_trials.csv": "入力周波数ごとの関節のシェア・射影・位相", "freq_joint_person.csv": "同・参加者平均",
             "freq_joint_group.csv": "同・群平均", "correction_events.csv": "修正イベント 1 件ずつ",
+            "initiation_events.csv": "手先の切り返し 1 件ずつの各成分の時刻差（tau_*_ms）と最初に動いた成分",
             "sessions_used.csv": "使った試行フォルダと計測の確認値", "missing.csv": "欠測"}
     for k, p in files.items():
         md += f"- [`data/{k}`]({_rel(p, out)}) — {desc.get(k, '')}\n"

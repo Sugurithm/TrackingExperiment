@@ -13,7 +13,7 @@ python skill_analysis/run_skill.py --all               # 4 条件それぞれを
 python skill_analysis/compare_conditions.py            # 解析済み条件の「条件 × 指標」比較表
 ```
 
-`.venv` の Python（numpy・scipy・matplotlib）で動く。1 条件 20 秒ほど。
+`.venv` の Python（numpy・scipy・matplotlib）で動く。1 条件 40 秒ほど（ほとんどが図の書き出し）。
 入力は `recordings/aim_*`（task.csv・meta.json・joints/rs_joints.npz・session.json・aim_eval_override.json）を
 **読むだけ**で、記録フォルダ・`analysis/`・`analysis_out/`・`aim_eval/` には書き込まない。
 関節の読み込み・机座標系・寄与の分解は既存の `aim_eval/common.py` をそのまま使う（書き換えていない）。
@@ -28,6 +28,7 @@ python skill_analysis/compare_conditions.py            # 解析済み条件の�
 | `skill_eval/io.py` | セッションの探索（`aim_eval_override.json` の DPI・参加者名）と試行の読み込み |
 | `skill_eval/tracking.py` | ① 追従特性（250 Hz の課題ログ） |
 | `skill_eval/coordination.py` | ② 関節の寄与・分担・先行・支え合い（3 次元関節位置） |
+| `skill_eval/initiation.py` | ② 動き出しの順序（手先が向きを変える瞬間に、どの関節が先に向きを変えるか） |
 | `skill_eval/stats.py` | 指標の一覧（`METRICS`）、参加者平均、練度との順位相関（全並べ替えの正確な p）、BH 補正、Syou の除外有無 |
 | `skill_eval/figures.py` | 図 |
 | `skill_eval/report.py` | 条件ごとの `report.md` |

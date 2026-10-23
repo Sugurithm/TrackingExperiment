@@ -199,6 +199,53 @@ def timing(people, tests, out, name="timing.png"):
     return metric_grid(people, tests, keys, "時間軸の役割分担（先行・位相差・支え合い）", out, name, ncol=3)
 
 
+def initiation(people, tests, ievents, out, name="initiation.png"):
+    """左: 最初に向きを変えた成分の割合（群ごと、A は Syou あり / なし）。右: 指標グリッド。"""
+    plt = _plt()
+    keys = ["init_tau_upperarm_ms", "init_tau_forearm_ms", "init_tau_hand_ms",
+            "init_prec_upperarm_forearm", "init_prec_forearm_hand", "init_rel_forearm_hand_ms"]
+    fig = plt.figure(figsize=(14, 6.4))
+    gs = fig.add_gridspec(2, 4, width_ratios=[1.25, 1, 1, 1])
+    ax = fig.add_subplot(gs[:, 0])
+    sets = []
+    for g in K.GROUPS:
+        sets.append((K.GROUP_LABEL[g], lambda e, g=g: e["group"] == g))
+        if g == "A":
+            sets.append(("A（Syou 除外）", lambda e: e["group"] == "A" and e["participant"] not in K.OUTLIER_CANDIDATES))
+    for nm in K.OUTLIER_CANDIDATES:
+        sets.append((nm, lambda e, nm=nm: e["participant"] == nm))
+    for i, (lab, sel) in enumerate(sets):
+        ev = [e for e in ievents if sel(e) and e.get("first")]
+        left = 0
+        for part in PARTS:
+            v = np.mean([e["first"] == part for e in ev]) if ev else 0
+            ax.barh(i, v, left=left, color=PCOL[part], edgecolor="white", lw=2, height=.7,
+                    label=PLAB[part] if i == 0 else None)
+            if v > .08:
+                ax.text(left + v / 2, i, f"{v:.0%}", ha="center", va="center", fontsize=7.5, color="#0b0b0b")
+            left += v
+    ax.set_yticks(range(len(sets))); ax.set_yticklabels([s[0] for s in sets])
+    for t in ax.get_yticklabels():
+        if t.get_text() in K.OUTLIER_CANDIDATES:
+            t.set_color(HL)
+    ax.set_ylim(len(sets) - .5, -.5); ax.set_xlim(0, 1)
+    ax.set_xlabel("手先の切り返しで最初に向きを変えた成分の割合")
+    ax.set_title("どの関節から動き出すか（全イベント）", loc="left")
+    ax.legend(loc="upper center", bbox_to_anchor=(.5, -.1), ncol=2)
+    tmap = {t["metric"]: t for t in tests}
+    for i, k in enumerate(keys):
+        a = fig.add_subplot(gs[i // 3, 1 + i % 3])
+        _strip(a, people, k, tmap.get(k))
+        if k.startswith("init_prec"):
+            a.axhline(.5, color="#8a8984", lw=.8, ls=(0, (2, 2)))
+        else:
+            a.axhline(0, color="#8a8984", lw=.8, ls=(0, (2, 2)))
+    fig.suptitle("動き出しの順序（手先が向きを変える瞬間に、各関節が向きを変えた時刻。負 = 手先より先 / 割合 0.5 = 同時）",
+                 fontsize=10, x=0.01, ha="left")
+    fig.tight_layout(rect=(0, 0, 1, .95))
+    p = _save(fig, out, name); plt.close(fig); return p
+
+
 def syou_sensitivity(tests, out, name="syou_sensitivity.png"):
     plt = _plt()
     rows = [t for t in tests if np.isfinite(t["rho_all"]) or np.isfinite(t["rho_noSyou"])]

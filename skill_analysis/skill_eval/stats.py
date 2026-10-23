@@ -70,6 +70,18 @@ METRICS = [
     ("xlag_forearm_hand_ms", "ラグ(肘→手首) [ms]", "時間の役割分担", 0),
     ("opp_upperarm_forearm", "肩と肘が逆向きの割合", "時間の役割分担", 0),
     ("opp_forearm_hand", "肘と手首が逆向きの割合", "時間の役割分担", 0),
+    # ② 動き出しの順序（手先が向きを変える瞬間に、どの関節が先に向きを変えるか）
+    ("init_tau_trunk_ms", "動き出し: 体幹の手先に対する時刻 [ms]", "動き出しの順序", 0),
+    ("init_tau_upperarm_ms", "動き出し: 肩の手先に対する時刻 [ms]", "動き出しの順序", 0),
+    ("init_tau_forearm_ms", "動き出し: 肘の手先に対する時刻 [ms]", "動き出しの順序", 0),
+    ("init_tau_hand_ms", "動き出し: 手首の手先に対する時刻 [ms]【参考】", "動き出しの順序", 0),
+    ("init_first_upperarm", "最初に動く割合: 肩", "動き出しの順序", 0),
+    ("init_first_forearm", "最初に動く割合: 肘", "動き出しの順序", 0),
+    ("init_first_hand", "最初に動く割合: 手首【参考】", "動き出しの順序", 0),
+    ("init_prec_upperarm_forearm", "肩が肘より先の割合", "動き出しの順序", 0),
+    ("init_prec_forearm_hand", "肘が手首より先の割合【参考】", "動き出しの順序", 0),
+    ("init_rel_upperarm_forearm_ms", "肩 − 肘の時刻差 [ms]", "動き出しの順序", 0),
+    ("init_rel_forearm_hand_ms", "肘 − 手首の時刻差 [ms]【参考】", "動き出しの順序", 0),
     ("elbow_range", "肘角の範囲 [deg]", "関節の寄与", 0),
     ("wrist_range", "手首角の範囲 [deg]【参考】", "関節の寄与", 0),
 ]
@@ -100,20 +112,34 @@ def _rho(x, y):
     return ss.spearmanr(x, y).statistic
 
 
+_LABEL_CACHE = {}
+
+
+def _label_ranks(levels):
+    """練度ラベルの異なる並べ方すべて（の順位、中心化・正規化済み）。ラベルの組ごとに 1 回だけ作る。"""
+    key = tuple(sorted(levels))
+    if key not in _LABEL_CACHE:
+        labs = np.array(sorted(set(itertools.permutations(key))), float)
+        R = ss.rankdata(labs, axis=1)
+        R -= R.mean(1, keepdims=True)
+        R /= np.linalg.norm(R, axis=1, keepdims=True)
+        _LABEL_CACHE[key] = R
+    return _LABEL_CACHE[key]
+
+
 def _perm_rho(levels, y):
-    """練度ラベルの全並べ替えによる Spearman ρ の正確な両側 p。"""
+    """練度ラベルの全並べ替えによる Spearman ρ の正確な両側 p。
+
+    Spearman ρ = 順位どうしの Pearson 相関なので、ラベルの並べ方すべての順位を行列にしておき、
+    y の順位との内積で一度に計算する（spearmanr を並べ方の数だけ呼ぶのと同じ値）。
+    """
     levels, y = np.asarray(levels), np.asarray(y, float)
     obs = _rho(levels, y)
     if not np.isfinite(obs):
         return np.nan, np.nan
-    seen, null = set(), []
-    for perm in itertools.permutations(range(len(levels))):
-        lab = tuple(levels[list(perm)])
-        if lab in seen:
-            continue
-        seen.add(lab)
-        null.append(_rho(np.array(lab), y))
-    null = np.array(null)
+    ry = ss.rankdata(y) - (len(y) + 1) / 2
+    ry /= np.linalg.norm(ry)
+    null = _label_ranks(levels) @ ry
     p = float(np.mean(np.abs(null) >= abs(obs) - 1e-12))
     return float(obs), p
 

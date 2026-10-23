@@ -3,7 +3,7 @@ import csv, json, os, time
 import numpy as np
 
 from . import config as K
-from . import tracking, coordination, stats, figures, report
+from . import tracking, coordination, initiation, stats, figures, report
 from .io import C, find_sessions, trial_dirs, load_trial, group_of
 
 
@@ -32,7 +32,7 @@ def run_condition(cond, out_root=K.RESULTS, log=print):
     log(f"== {name}（DPI {dpi} / {band}）→ {out}")
 
     sessions = find_sessions(dpi)
-    used, trials, ftrack, fjoint, events, missing = [], [], [], [], [], []
+    used, trials, ftrack, fjoint, events, missing, ievents = [], [], [], [], [], [], []
     examples = {}
     for g, members in K.GROUPS.items():
         for person in members:
@@ -56,8 +56,11 @@ def run_condition(cond, out_root=K.RESULTS, log=print):
                 if cres is None:
                     log(f"  ! {person} {tname}: 関節データが無いので協調は欠測")
                     cres, jrows = {}, []
-                row = {**head, **tres, **cres}
+                ires, ievs = initiation.compute(tr) if tr.has_rs else (None, None)
+                ires, ievs = ires or {}, ievs or []
+                row = {**head, **tres, **cres, **ires}
                 trials.append(row)
+                ievents += [{**head, **e} for e in ievs]
                 ftrack += [{**head, **r} for r in frows]
                 fjoint += [{**head, **r} for r in jrows]
                 events += [{**head, **e} for e in evs]
@@ -100,6 +103,7 @@ def run_condition(cond, out_root=K.RESULTS, log=print):
         "freq_joint_person.csv": _write_csv(os.path.join(d_data, "freq_joint_person.csv"), fp_joint),
         "freq_joint_group.csv": _write_csv(os.path.join(d_data, "freq_joint_group.csv"), fg_joint),
         "correction_events.csv": _write_csv(os.path.join(d_data, "correction_events.csv"), events, first),
+        "initiation_events.csv": _write_csv(os.path.join(d_data, "initiation_events.csv"), ievents, first),
     }
 
     # ---- 図
@@ -128,6 +132,7 @@ def run_condition(cond, out_root=K.RESULTS, log=print):
     figs["joint_shares"] = figures.joint_shares(people, d_fig)
     figs["share_by_freq"] = figures.share_by_freq(fp_joint, d_fig)
     figs["timing"] = figures.timing(people, tests, d_fig)
+    figs["initiation"] = figures.initiation(people, tests, ievents, d_fig)
     figs["syou_sensitivity"] = figures.syou_sensitivity(tests, d_fig)
 
     # ---- レポート

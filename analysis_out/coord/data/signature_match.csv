@@ -1,0 +1,7 @@
+﻿cond_a,cond_b,n,hits,chance,p_perm,metrics
+400_fast,400_slow,9,5,1.0,0.0008,"gshare_trunk,gshare_upperarm,eshare3_distal,N_eff3,C_glob3,mshare_prox,C_move3,rslope_prox,psis_sd_per100"
+400_fast,800_fast,9,4,1.0,0.0038,"gshare_trunk,gshare_upperarm,eshare3_distal,N_eff3,C_glob3,mshare_prox,C_move3,rslope_prox,psis_sd_per100"
+400_fast,800_slow,9,4,1.0,0.003,"gshare_trunk,gshare_upperarm,eshare3_distal,N_eff3,C_glob3,mshare_prox,C_move3,rslope_prox,psis_sd_per100"
+400_slow,800_fast,9,3,1.0,0.0544,"gshare_trunk,gshare_upperarm,eshare3_distal,N_eff3,C_glob3,mshare_prox,C_move3,rslope_prox,psis_sd_per100"
+400_slow,800_slow,9,4,1.0,0.0112,"gshare_trunk,gshare_upperarm,eshare3_distal,N_eff3,C_glob3,mshare_prox,C_move3,rslope_prox,psis_sd_per100"
+800_fast,800_slow,9,5,1.0,0.0004,"gshare_trunk,gshare_upperarm,eshare3_distal,N_eff3,C_glob3,mshare_prox,C_move3,rslope_prox,psis_sd_per100"

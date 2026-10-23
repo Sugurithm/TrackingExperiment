@@ -29,7 +29,6 @@ SESSIONS = [
     dict(dir=r"recordings/aim_Yuuki800_20261022_153317",   participant="Yuuki",  dpi=800),
     dict(dir=r"recordings/aim_Yuya400_20261022_134407",   participant="Yuya",  dpi=400),
     dict(dir=r"recordings/aim_Yuya800_20261022_133738",   participant="Yuya",  dpi=800),
-
 ]
 
 OUT = "analysis"            # 出力先（参加者ごとのフォルダと between/ がこの下にできる）

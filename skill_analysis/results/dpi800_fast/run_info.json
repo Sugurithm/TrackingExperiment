@@ -6,6 +6,6 @@
  },
  "n_trials": 24,
  "n_people": 8,
- "elapsed_s": 18.24048614501953,
+ "elapsed_s": 40.66938090324402,
  "aim_eval_common": "aim_eval\\common.py"
 }
