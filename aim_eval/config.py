@@ -68,7 +68,7 @@ VIDEO_JOBS = 0              # 動画の並列数（0 = 1 本ずつ）
 #   課題の最高周波数は 1.08 Hz、解析前に 5 Hz 低域通過をかけるので 30 fps でも情報は落ちない。
 #   **Pose モデル（heavy / full）は experiment/config.py の POSE_VARIANT で変える。**
 #   どちらも計測系を変えるので、本番の前に 1 試行で compare_settings.py を回して差を見ること。
-STRIDE = 2
+STRIDE = 1
 
 # ---- step2 解析（全試行で 1 分ほど。何度でも回せる）----
 FORCE = False               # すでに eval/ がある試行もやり直す
