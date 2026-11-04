@@ -1,0 +1,45 @@
+[slow_s1_all] perf_link: persons 9, trials 9
+
+=== performance by person (mean over trials) ===
+person   group     slow:rms_mm  on%  lagfree
+Kakeru   FPS            6.0   92     4.8
+Keito    nonFPS         6.4   89     5.7
+Kosuke   nonFPS         8.1   85     7.2
+Suguru   FPS            5.1   97     4.3
+Suzuka   nonFPS         8.2   78     5.1
+Syou     FPS            6.0   93     4.9
+Xin      FPS            7.8   83     5.6
+Yuuki    nonFPS         8.2   76     5.9
+Yuya     FPS            5.6   95     4.5
+
+=== is performance a stable person trait? ICC(1) over trials ===
+slow  rms_mm          n/a
+slow  on_pct          n/a
+slow  rms_lagfree_mm  n/a
+
+=== correlation, 人の間（人ごとの平均 n=人数）: Spearman rho (p) ; rms_mm/rms_lagfree_mm は小さいほど良い，on_pct は大きいほど良い，lag_*_ms はマウスの遅れ（小さいほど速い）===
+-- slow
+feature                     rms_mm                on_pct        rms_lagfree_mm            lag_all_ms           lag_high_ms
+F_x_share     -0.28 (p=0.458, q=0.74)  +0.25 (p=0.517, q=0.77)  -0.47 (p=0.219, q=0.57)  +0.03 (p=0.949, q=0.98)  +0.15 (p=0.698, q=0.88)
+H_x_share     -0.52 (p=0.173, q=0.57)  +0.48 (p=0.195, q=0.57)  -0.62 (p=0.087, q=0.42)  -0.37 (p=0.366, q=0.65)  -0.07 (p=0.892, q=0.98)
+U_y_share     +0.02 (p=0.982, q=0.98)  +0.03 (p=0.951, q=0.98)  +0.33 (p=0.385, q=0.66)  +0.23 (p=0.554, q=0.77)  -0.35 (p=0.351, q=0.65)
+S_y_share     +0.48 (p=0.193, q=0.57)  -0.40 (p=0.290, q=0.58)  +0.23 (p=0.555, q=0.77)  +0.23 (p=0.565, q=0.77)  +0.63 (p=0.069, q=0.39)
+F_y_share     -0.12 (p=0.765, q=0.90)  -0.05 (p=0.912, q=0.98)  -0.40 (p=0.276, q=0.58)  -0.12 (p=0.770, q=0.90)  +0.17 (p=0.690, q=0.88)
+gain_high     -0.43 (p=0.256, q=0.58)  +0.53 (p=0.160, q=0.57)  -0.42 (p=0.274, q=0.58)                     -                     -
+lag_high_ms   +0.80 (p=0.014, q=0.16)  -0.80 (p=0.020, q=0.17)  +0.45 (p=0.218, q=0.57)                     -                     -
+lag_all_ms    +0.87 (p=0.007, q=0.12)  -0.88 (p=0.002, q=0.07)  +0.67 (p=0.054, q=0.37)                     -                     -
+p<0.05: 4 / 34 (偶然の期待 1.7) ; q<0.05: 0
+
+=== correlation, 人の中（人の平均を引いた試行 n=試行数）: Spearman rho (p) ; rms_mm/rms_lagfree_mm は小さいほど良い，on_pct は大きいほど良い，lag_*_ms はマウスの遅れ（小さいほど速い）===
+-- slow
+feature                     rms_mm                on_pct        rms_lagfree_mm            lag_all_ms           lag_high_ms
+F_x_share                        -                     -                     -                     -                     -
+H_x_share                        -                     -                     -                     -                     -
+U_y_share                        -                     -                     -                     -                     -
+S_y_share                        -                     -                     -                     -                     -
+F_y_share                        -                     -                     -                     -                     -
+gain_high                        -                     -                     -                     -                     -
+lag_high_ms                      -                     -                     -                     -                     -
+lag_all_ms                       -                     -                     -                     -                     -
+p<0.05: 0 / 0 (偶然の期待 0.0) ; q<0.05: 0
+

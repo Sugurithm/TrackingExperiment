@@ -1,0 +1,7 @@
+label,person,group,dpi,trial,band,seed,attempt,axis,pair,lag_ms,peak_r
+Suguru400,Suguru,FPS,400,trial_06_fast_s3,fast,3,1,h,shoulder-elbow,302.3557662963867,0.3142141824436894
+Suguru400,Suguru,FPS,400,trial_06_fast_s3,fast,3,1,h,elbow-wrist,77.4526142271966,-0.2126322731172309
+Suguru400,Suguru,FPS,400,trial_06_fast_s3,fast,3,1,h,wrist-mcp3,-20.10571998537932,0.9923568562358457
+Suguru400,Suguru,FPS,400,trial_06_fast_s3,fast,3,1,v,shoulder-elbow,-105.74674268400932,0.8846338300988471
+Suguru400,Suguru,FPS,400,trial_06_fast_s3,fast,3,1,v,elbow-wrist,-54.17515430663182,0.9778424380032954
+Suguru400,Suguru,FPS,400,trial_06_fast_s3,fast,3,1,v,wrist-mcp3,0.8410884796278443,0.9976977802670778

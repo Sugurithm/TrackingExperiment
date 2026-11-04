@@ -1,557 +1,165 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 """
-xcorr_trial.py — 試行ごとの関節間の相互相関（変位・速度・加速度）
+xcorr_trial_simple.py — 関節の変位の図だけを出力する簡易版
 
-  python joint_analysis/xcorr_trial.py                                   # recordings/aim*/ の全試行（引数なし = recordings）
-  python joint_analysis/xcorr_trial.py recordings                        # 同上
-  python joint_analysis/xcorr_trial.py recordings/aim_kakeru400_xxx      # 1 セッション
-  python joint_analysis/xcorr_trial.py "recordings/aim_kakeru*"          # パターン（* ? [ は自分で展開する）
-  python joint_analysis/xcorr_trial.py recordings/aim_kakeru400_xxx/trial_01_slow_s1   # 1 試行
-  対象は recordings/aim*/<試行>/joints/rs_joints.npz の形だけ（calib_*, trial_* など aim 以外は見ない）。
-  オプション: --out analysis  --joints shoulder elbow wrist mcp3  --pairs chain|all
-              --fc 5  --max-lag 1.0  --include-static  --no-crop
+  python joint_analysis/xcorr_trial_simple.py recordings/aim_xxx/trial_01_slow_s1
+  python joint_analysis/xcorr_trial_simple.py recordings/aim_xxx            # セッション内の全試行
+  python joint_analysis/xcorr_trial_simple.py recordings                    # 全セッションの全試行
 
-出力: <out>/<セッション名>/<試行名>/xcorr/
-  summary.csv            ペア × 信号（変位・速度・加速度）ごとの r(0)，ピークのラグ・相関
-  curves.csv             R(τ) の曲線そのもの（ラグ [ms] × ペア・信号）
-  info.json             使った設定，標本化周波数，区間，各関節の有効率，左右の取り違えの割合
-  timeseries_<信号>.png  全関節（X, Y, Z）の時系列
-  combined_disp.png      全関節の変位を軸（X, Y, Z）ごとに重ね合わせた時系列
-  combined_disp_norm.png 全関節の「変位の大きさ（ノルム）」を一つに重ね合わせた時系列
-  pair_disp_norm.png     全ペアごとの「変位の大きさ（ノルム）」の比較時系列
-  pair_relative_disp_norm.png ペア間の相対変位（例: 肘の変位 - 肩の変位）の大きさ
-  pair_<a>-<b>.png       ペアごと: 共通の主軸方向への射影と相互相関
+出力: <out>/<セッション名>/<試行名>/
+  combined_disp.png             全関節の変位（X, Y, Z ごとに重ねる）
+  combined_disp_norm.png        全関節の変位の大きさ（ノルム）
+  pair_relative_disp_norm.png   隣り合う関節の相対変位の大きさ
 """
-from __future__ import annotations
-
 import argparse
-import csv
-import glob
-import itertools
-import json
-import sys
-import time
 from pathlib import Path
 
 import numpy as np
-from numpy.lib.stride_tricks import sliding_window_view
+import matplotlib.pyplot as plt
 from scipy.signal import butter, filtfilt
 
-SIGS = ("disp", "vel", "acc")
-UNIT = {"disp": "mm", "vel": "mm/s", "acc": "mm/s²"}
-NAME_JA = {"disp": "変位", "vel": "速度", "acc": "加速度"}
-NAME_EN = {"disp": "displacement", "vel": "velocity", "acc": "acceleration"}
-AXC = ("tab:red", "tab:green", "tab:blue")
-JA = False   # setup_font() で決まる
+# ---------- 設定（数値はここで変更する） ----------
+DEFAULT_PATH = "recordings"                                   # 入力フォルダ
+DEFAULT_OUT = "analysis"                                      # 出力フォルダ
+DEFAULT_JOINTS = ["shoulder", "elbow", "wrist", "mcp3"]       # 関節（連結の順）
+
+DEFAULT_FC = 5.0          # 低域通過の遮断周波数 [Hz]
+FILTER_ORDER = 4          # フィルタの次数
+MAX_NORM_FREQ = 0.99      # 遮断周波数の上限（ナイキスト周波数に対する比）
+
+Y_RANGE_DISP = (-150, 150)   # combined_disp の Y 軸 [mm]
+Y_RANGE_NORM = (0, 200)      # combined_disp_norm の Y 軸 [mm]
+Y_RANGE_PAIR = (0, 120)      # pair_relative_disp_norm の Y 軸 [mm]
+
+FIGSIZE_DISP = (12, 7.5)     # combined_disp の図の大きさ
+FIGSIZE_NORM = (12, 4)       # combined_disp_norm の図の大きさ
+PAIR_FIG_WIDTH = 12          # pair 図の幅
+PAIR_FIG_ROW_HEIGHT = 2.5    # pair 図の 1 段あたりの高さ
+PAIR_FIG_MARGIN = 0.8        # pair 図の余白分の高さ
+
+DPI = 110                    # 画像の解像度
+GRID_ALPHA = 0.3             # グリッド線の濃さ
 
 
-# ------------------------------------------------------------------ 補助
-def setup_font():
-    global JA
-    import matplotlib
-    from matplotlib import font_manager as fm
-    have = {f.name for f in fm.fontManager.ttflist}
-    for c in ("Yu Gothic", "Meiryo", "IPAexGothic", "IPAGothic", "Noto Sans CJK JP", "Noto Sans JP",
-              "Hiragino Sans", "MS Gothic", "TakaoGothic"):
-        if c in have:
-            matplotlib.rcParams["font.family"] = c
-            matplotlib.rcParams["axes.unicode_minus"] = False
-            JA = True
-            break
-
-
-def L(ja, en):
-    return ja if JA else en
-
-
-def _trials_in_session(sess):
-    return sorted(q for q in sess.iterdir() if q.is_dir() and (q / "joints" / "rs_joints.npz").exists())
-
-
-def discover(path):
+# ---------- 試行フォルダを探す ----------
+def find_trials(path):
     p = Path(path)
-    if not p.is_dir():
-        return []
-    if (p / "joints" / "rs_joints.npz").exists():
+    if (p / "joints" / "rs_joints.npz").exists():      # 試行そのもの
         return [p]
-    if p.name.lower().startswith("aim"):
-        return _trials_in_session(p)
-    found = []
-    for d in sorted(p.iterdir()):
-        if d.is_dir() and d.name.lower().startswith("aim"):
-            found += _trials_in_session(d)
-    return found
-
-
-def collect(paths):
     trials = []
-    for pat in paths:
-        hits = sorted(glob.glob(pat)) if any(c in pat for c in "*?[") else [pat]
-        for h in hits:
-            trials += discover(h)
-    return list(dict.fromkeys(trials))
-
-
-def trial_kind(trial):
-    f = trial / "meta.json"
-    if f.exists():
-        try:
-            return json.loads(f.read_text(encoding="utf-8")).get("task", {}).get("kind")
-        except Exception:
-            return None
-    return None
-
-
-def read_span(trial):
-    f = trial / "task.csv"
-    if not f.exists():
-        return None
-    d = np.genfromtxt(f, delimiter=",", names=True)
-    t, ep = np.atleast_1d(d["t"]).astype(float), np.atleast_1d(d["epoch"]).astype(float)
-    T = 40.0
-    sj = trial.parent / "session.json"
-    if sj.exists():
-        try:
-            T = float(json.loads(sj.read_text(encoding="utf-8")).get("config", {}).get("trial_s", T))
-        except Exception:
-            pass
-    T = min(T, float(t.max()))
-    return float(np.interp(0.0, t, ep)), float(np.interp(T, t, ep)), T
-
-
-def hampel_flags(x, k=4, n=3.0):
-    pad = np.pad(x, (k, k), mode="edge")
-    win = sliding_window_view(pad, 2 * k + 1)
-    med = np.median(win, axis=1)
-    mad = 1.4826 * np.median(np.abs(win - med[:, None]), axis=1)
-    return (mad > 1e-9) & (np.abs(x - med) > n * mad)
-
-
-def despike(X, k=4, n=3.0):
-    X = X.copy()
-    ok = np.isfinite(X).all(1)
-    if ok.sum() < 2 * k + 2:
-        return X, 0
-    sub = X[ok]
-    bad = np.zeros(len(sub), bool)
-    for c in range(3):
-        bad |= hampel_flags(sub[:, c], k, n)
-    idx = np.flatnonzero(ok)[bad]
-    X[idx] = np.nan
-    return X, int(bad.sum())
-
-
-def lowpass(X, fs, fc):
-    if len(X) < 40:
-        return X.copy()
-    b, a = butter(4, min(fc / (fs / 2), 0.99))
-    return filtfilt(b, a, X, axis=0)
-
-
-def to_grid(t, X, grid, gap_limit, fs):
-    ok = np.isfinite(X).all(1)
-    if ok.sum() < 8:
-        return np.full((len(grid), 3), np.nan), np.zeros(len(grid), bool)
-    tv, Xv = t[ok], X[ok]
-    Y = np.column_stack([np.interp(grid, tv, Xv[:, k]) for k in range(3)])
-    i = np.searchsorted(tv, grid)
-    prev = tv[np.clip(i - 1, 0, len(tv) - 1)]
-    nxt = tv[np.clip(i, 0, len(tv) - 1)]
-    near = np.minimum(np.abs(grid - prev), np.abs(nxt - grid))
-    inside = (grid >= tv[0] - 0.5 / fs) & (grid <= tv[-1] + 0.5 / fs)
-    valid = inside & (((nxt - prev) <= gap_limit) | (near <= 0.5 / fs))
-    return Y, valid
-
-
-def erode(m, k):
-    out = m.copy()
-    for s in range(1, k + 1):
-        out &= np.roll(m, s) & np.roll(m, -s)
-    out[:k] = False
-    out[len(out) - k:] = False
-    return out
-
-
-def make_signals(X, valid, fs):
-    d = X - X[valid].mean(0)
-    v = np.gradient(d, axis=0) * fs
-    a = np.gradient(v, axis=0) * fs
-    return {"disp": (d, valid), "vel": (v, erode(valid, 1)), "acc": (a, erode(valid, 2))}
-
-
-# ------------------------------------------------------------------ 相互相関
-def xcorr(a, ma, b, mb, L_, min_overlap=0.3):
-    lags = np.arange(-L_, L_ + 1)
-    r = np.full(len(lags), np.nan)
-    na, nb = int(ma.sum()), int(mb.sum())
-    if na < 10 or nb < 10:
-        return lags, r
-    N = len(a)
-    nfft = 1 << int(np.ceil(np.log2(2 * N)))
-    A = np.where(ma[:, None], a - a[ma].mean(0), 0.0)
-    B = np.where(mb[:, None], b - b[mb].mean(0), 0.0)
-    va, vb = (A ** 2).sum() / na, (B ** 2).sum() / nb
-    if va <= 0 or vb <= 0:
-        return lags, r
-    FA, FB = np.fft.rfft(A, nfft, axis=0), np.fft.rfft(B, nfft, axis=0)
-    c = np.fft.irfft((FA * np.conj(FB)).sum(1), nfft)
-    cnt = np.fft.irfft(np.fft.rfft(ma.astype(float), nfft) * np.conj(np.fft.rfft(mb.astype(float), nfft)), nfft)
-    ii = lags % nfft
-    n_ov = np.rint(cnt[ii])
-    ok = n_ov >= max(10.0, min_overlap * min(na, nb))
-    r[ok] = c[ii][ok] / (n_ov[ok] * np.sqrt(va * vb))
-    return lags, r
-
-
-def refine(lags, r, i, fs):
-    if 0 < i < len(r) - 1 and np.isfinite(r[i - 1:i + 2]).all():
-        y0, y1, y2 = r[i - 1], r[i], r[i + 1]
-        den = y0 - 2 * y1 + y2
-        if abs(den) > 1e-12:
-            dl = float(np.clip(0.5 * (y0 - y2) / den, -1, 1))
-            return (lags[i] + dl) / fs * 1000.0, float(y1 - 0.25 * (y0 - y2) * dl)
-    return lags[i] / fs * 1000.0, float(r[i])
-
-
-def peaks(lags, r, fs):
-    if not np.isfinite(r).any():
-        return dict(tau=np.nan, rpk=np.nan, tau_pos=np.nan, rpos=np.nan, r0=np.nan, edge=False)
-    i = int(np.nanargmax(np.abs(r)))
-    j = int(np.nanargmax(r))
-    tau, rpk = refine(lags, r, i, fs)
-    tp, rp = refine(lags, r, j, fs)
-    r0 = float(r[len(r) // 2])
-    return dict(tau=tau, rpk=rpk, tau_pos=tp, rpos=rp, r0=r0, edge=bool(i in (0, len(r) - 1)))
-
-
-# ------------------------------------------------------------------ 図
-def plot_all(path, joints, sig, S, tt):
-    import matplotlib.pyplot as plt
-    fig, axs = plt.subplots(len(joints), 1, figsize=(12, 2.1 * len(joints) + 0.8), sharex=True)
-    axs = np.atleast_1d(axs)
-    for ax, j in zip(axs, joints):
-        x, m = S[j][sig]
-        y = np.where(m[:, None], x, np.nan)
-        for k, lab in enumerate("XYZ"):
-            ax.plot(tt, y[:, k], lw=0.9, color=AXC[k], label=lab)
-        ax.set_ylabel(f"{j}\n[{UNIT[sig]}]")
-        ax.grid(alpha=0.3)
-    axs[0].legend(ncol=3, loc="upper right", fontsize=8, title=L("カメラ座標の軸", "camera axes"), title_fontsize=8)
-    axs[-1].set_xlabel(L("時間 [s]", "time [s]"))
-    fig.suptitle(L(f"全関節の{NAME_JA[sig]}", f"All joints: {NAME_EN[sig]}"))
-    fig.tight_layout()
-    fig.savefig(path, dpi=110)
-    plt.close(fig)
-
-
-def plot_combined_disp(path, joints, S, tt):
-    import matplotlib.pyplot as plt
-    fig, axs = plt.subplots(3, 1, figsize=(12, 7.5), sharex=True)
-    labels = ["X", "Y", "Z"]
-    colors = plt.cm.tab10(np.linspace(0, 1, len(joints)))
-    for ax, k, lab in zip(axs, range(3), labels):
-        for idx, j in enumerate(joints):
-            x, m = S[j]["disp"]
-            y = np.where(m, x[:, k], np.nan)
-            ax.plot(tt, y, lw=1.2, color=colors[idx], label=j, alpha=0.8)
-        ax.set_ylabel(f"{lab} {L('変位', 'Disp.')}\n[mm]")
-        ax.grid(alpha=0.3)
-        if k == 0:
-            ax.legend(ncol=len(joints), loc="upper right", fontsize=9, title=L("関節", "Joints"))
-    axs[-1].set_xlabel(L("時間 [s]", "time [s]"))
-    fig.suptitle(L("全関節の変位比較", "Displacement Comparison across All Joints"))
-    fig.tight_layout()
-    fig.savefig(path, dpi=110)
-    plt.close(fig)
-
-
-def plot_combined_disp_norm(path, joints, S, tt):
-    import matplotlib.pyplot as plt
-    fig, ax = plt.subplots(figsize=(12, 4))
-    colors = plt.cm.tab10(np.linspace(0, 1, len(joints)))
-    for idx, j in enumerate(joints):
-        x, m = S[j]["disp"]
-        norm = np.linalg.norm(x, axis=1)
-        y = np.where(m, norm, np.nan)
-        ax.plot(tt, y, lw=1.2, color=colors[idx], label=j, alpha=0.8)
-    ax.set_ylabel(L("変位の大きさ\n[mm]", "Disp. Magnitude\n[mm]"))
-    ax.set_xlabel(L("時間 [s]", "time [s]"))
-    ax.grid(alpha=0.3)
-    ax.legend(ncol=len(joints), loc="upper right", fontsize=9, title=L("関節", "Joints"))
-    fig.suptitle(L("全関節の変位の大きさ（ノルム）比較", "Displacement Magnitude Comparison across All Joints"))
-    fig.tight_layout()
-    fig.savefig(path, dpi=110)
-    plt.close(fig)
-
-
-def plot_pair_disp_norm(path, pairs, S, tt):
-    import matplotlib.pyplot as plt
-    if not pairs:
-        return
-    fig, axs = plt.subplots(len(pairs), 1, figsize=(12, 2.5 * len(pairs) + 0.8), sharex=True)
-    axs = np.atleast_1d(axs)
-    for ax, (a, b) in zip(axs, pairs):
-        xa, ma = S[a]["disp"]
-        xb, mb = S[b]["disp"]
-        norm_a = np.where(ma, np.linalg.norm(xa, axis=1), np.nan)
-        norm_b = np.where(mb, np.linalg.norm(xb, axis=1), np.nan)
-        ax.plot(tt, norm_a, lw=1.2, color="tab:blue", label=a, alpha=0.8)
-        ax.plot(tt, norm_b, lw=1.2, color="tab:orange", label=b, alpha=0.8)
-        ax.set_ylabel(f"{a} & {b}\n[mm]")
-        ax.grid(alpha=0.3)
-        ax.legend(loc="upper right", fontsize=9)
-    axs[-1].set_xlabel(L("時間 [s]", "time [s]"))
-    fig.suptitle(L("ペアごとの変位の大きさ（ノルム）比較", "Pairwise Displacement Magnitude Comparison"))
-    fig.tight_layout()
-    fig.savefig(path, dpi=110)
-    plt.close(fig)
-
-
-def plot_pair_relative_disp_norm(path, pairs, S, tt):
-    """ペア間の相対変位（bの変位 - aの変位）の大きさ（ノルム）をプロットする"""
-    import matplotlib.pyplot as plt
-    if not pairs:
-        return
-    fig, axs = plt.subplots(len(pairs), 1, figsize=(12, 2.5 * len(pairs) + 0.8), sharex=True)
-    axs = np.atleast_1d(axs)
-    for ax, (a, b) in zip(axs, pairs):
-        xa, ma = S[a]["disp"]
-        xb, mb = S[b]["disp"]
-        
-        # どちらのデータも有効なインデックスのみ計算
-        valid = ma & mb
-        rel_disp = xb - xa  # 変位ベクトルの差分 (例: 肘の変位 - 肩の変位)
-        norm_rel = np.where(valid, np.linalg.norm(rel_disp, axis=1), np.nan)
-        
-        ax.plot(tt, norm_rel, lw=1.2, color="tab:purple", alpha=0.9)
-        ax.set_ylabel(f"|| {b} - {a} ||\n[mm]")
-        ax.grid(alpha=0.3)
-        ax.legend([L(f"{b} と {a} の相対変位の大きさ", f"Relative disp. mag. ({b} - {a})")], 
-                  loc="upper right", fontsize=9)
-        
-    axs[-1].set_xlabel(L("時間 [s]", "time [s]"))
-    fig.suptitle(L("ペア間の相対変位の大きさ（ノルム）", "Relative Displacement Magnitude Between Pairs"))
-    fig.tight_layout()
-    fig.savefig(path, dpi=110)
-    plt.close(fig)
-
-
-def plot_pair(path, a, b, S, res, tt, fs, max_lag_ms):
-    import matplotlib.pyplot as plt
-    fig, axs = plt.subplots(3, 2, figsize=(14, 8.5), gridspec_kw={"width_ratios": [3, 1.35]})
-    for row, sig in enumerate(SIGS):
-        (xa, ma), (xb, mb) = S[a][sig], S[b][sig]
-        both = np.vstack([xa[ma] - xa[ma].mean(0), xb[mb] - xb[mb].mean(0)]) if ma.any() and mb.any() else None
-        ax, ar = axs[row]
-        if both is not None and len(both) > 5:
-            u = np.linalg.svd(both, full_matrices=False)[2][0]
-            ya = np.where(ma, (xa - xa[ma].mean(0)) @ u, np.nan)
-            yb = np.where(mb, (xb - xb[mb].mean(0)) @ u, np.nan)
-            ax.plot(tt, ya, lw=1.0, color="tab:blue", label=a)
-            ax.plot(tt, yb, lw=1.0, color="tab:orange", label=b)
-            ax.legend(loc="upper right", fontsize=8, ncol=2)
-        ax.set_ylabel(f"{L(NAME_JA[sig], NAME_EN[sig])}\n[{UNIT[sig]}]")
-        ax.grid(alpha=0.3)
-        if row == 2:
-            ax.set_xlabel(L("時間 [s]（共通の主軸方向への射影）", "time [s] (projection on the common principal axis)"))
-        R = res[sig]
-        lag_ms = R["lags"] / fs * 1000.0
-        ar.plot(lag_ms, R["r"], color="k", lw=1.2)
-        ar.axhline(0, color="gray", lw=0.6)
-        ar.axvline(0, color="gray", lw=0.6, ls=":")
-        p = R["pk"]
-        if np.isfinite(p["tau"]):
-            ar.axvline(p["tau"], color="tab:red", lw=1.0)
-            who = (L(f"{a} が先行", f"{a} leads") if p["tau"] < 0 else L(f"{b} が先行", f"{b} leads")) \
-                if abs(p["tau"]) > 1e-9 else L("同時", "simultaneous")
-            ar.set_title(f"τ = {p['tau']:+.0f} ms, r = {p['rpk']:+.2f}（{who}）", fontsize=9)
-        ar.set_xlim(-max_lag_ms, max_lag_ms)
-        ar.set_ylim(-1.02, 1.02)
-        ar.set_ylabel("r(τ)")
-        ar.grid(alpha=0.3)
-        if row == 2:
-            ar.set_xlabel(L("ラグ τ [ms]  （+ = a が遅れ，− = a が先行）", "lag τ [ms]  (+ = a lags, − = a leads)"))
-    fig.suptitle(f"{L('相互相関', 'Cross-correlation')}: a = {a},  b = {b}")
-    fig.tight_layout()
-    fig.savefig(path, dpi=110)
-    plt.close(fig)
-
-
-# ------------------------------------------------------------------ 試行
-def process_trial(trial, out_root, args):
-    session = trial.parent.name
-    out = Path(out_root) / session / trial.name / "xcorr"
-    out.mkdir(parents=True, exist_ok=True)
-    z = np.load(trial / "joints" / "rs_joints.npz", allow_pickle=False)
-    names = [str(n) for n in z["names"]]
-    miss = [j for j in args.joints if j not in names]
-    if miss:
-        raise SystemExit(f"[ERROR] 関節 {miss} が rs_joints.npz にない（ある関節: {names}）")
-    te = z["t"].astype(float)
-    P = z["P_C"].astype(float)
-    swapped = z["lr_swapped"].astype(bool) if "lr_swapped" in z.files else None
-
-    span = None if args.no_crop else read_span(trial)
-    if span:
-        e0, e1, T = span
-        sel = (te >= e0) & (te < e1)
-        crop = f"task.csv の [0, {T:g}) s"
-    else:
-        sel = np.isfinite(te)
-        e0, e1, T = float(te[sel][0]), float(te[sel][-1]), float(te[sel][-1] - te[sel][0])
-        crop = "全フレーム（task.csv なし or --no-crop）"
-    te_s = te[sel]
-    order = np.argsort(te_s)
-    te_s = te_s[order]
-    keep = np.r_[True, np.diff(te_s) > 1e-6]
-    te_s = te_s[keep]
-    if len(te_s) < 30:
-        info = {"status": "skipped", "reason": f"フレームが少ない（{len(te_s)}）"}
-        (out / "info.json").write_text(json.dumps(info, ensure_ascii=False, indent=1), encoding="utf-8")
-        return info
-    fs = 1.0 / float(np.median(np.diff(te_s)))
-    if args.fc > 0.9 * fs / 2:
-        print(f"[WARN] {trial.name}: fs = {fs:.1f} Hz に対し fc = {args.fc:g} Hz はナイキスト（{fs / 2:.1f} Hz）に近く、"
-              f"低域通過がほとんど効かない（ノイズが残る）")
-    n = int((e1 - e0) * fs)
-    grid = e0 + np.arange(n) / fs
-    tt = grid - e0
-
-    S, valid_frac, raw_frac, n_spikes = {}, {}, {}, {}
-    for j in args.joints:
-        X = P[sel][order][keep][:, names.index(j), :]
-        raw_frac[j] = float(np.isfinite(X).all(1).mean())
-        X, n_spike = despike(X)
-        n_spikes[j] = n_spike
-        Y, valid = to_grid(te_s, X, grid, args.gap, fs)
-        if valid.sum() < 10:
-            S[j] = None
-            valid_frac[j] = 0.0
+    for d in sorted(p.iterdir()):
+        if not d.is_dir():
             continue
-        Yf = lowpass(Y, fs, args.fc)
-        S[j] = make_signals(Yf, valid, fs)
-        valid_frac[j] = float(valid.mean())
-    usable = [j for j in args.joints if S[j] is not None]
-    if len(usable) < 2:
-        info = {"status": "skipped", "reason": "有効な関節が 2 つ未満", "valid_frac": valid_frac}
-        (out / "info.json").write_text(json.dumps(info, ensure_ascii=False, indent=1), encoding="utf-8")
-        return info
-
-    if args.pairs == "all":
-        pairs = [(a, b) for a, b in itertools.combinations(args.joints, 2)]
-    else:
-        pairs = [(a, b) for a, b in zip(args.joints[:-1], args.joints[1:])]
-    pairs = [(a, b) for a, b in pairs if S[a] is not None and S[b] is not None]
-
-    L_ = int(min(args.max_lag * fs, n // 4))
-    rows, curves = [], {}
-    results = {}
-    for a, b in pairs:
-        results[(a, b)] = {}
-        for sig in SIGS:
-            xa, ma = S[a][sig]
-            xb, mb = S[b][sig]
-            lags, r = xcorr(xa, ma, xb, mb, L_)
-            pk = peaks(lags, r, fs)
-            results[(a, b)][sig] = dict(lags=lags, r=r, pk=pk)
-            curves[f"{a}-{b}_{sig}"] = r
-            lead = ("" if not np.isfinite(pk["tau"]) else
-                    "同時" if abs(pk["tau"]) < 1e-9 else (f"{a} が先行" if pk["tau"] < 0 else f"{b} が先行"))
-            rows.append(dict(session=session, trial=trial.name, a=a, b=b, signal=sig,
-                             n_overlap=int(np.sum(ma & mb)), r0=pk["r0"],
-                             tau_peak_ms=pk["tau"], r_peak=pk["rpk"], lead=lead,
-                             tau_pos_ms=pk["tau_pos"], r_pos=pk["rpos"],
-                             at_window_edge=pk["edge"]))
-
-    with open(out / "summary.csv", "w", encoding="utf-8-sig", newline="") as f:
-        w = csv.DictWriter(f, fieldnames=list(rows[0].keys()))
-        w.writeheader()
-        for r_ in rows:
-            w.writerow({k: (round(v, 4) if isinstance(v, float) else v) for k, v in r_.items()})
-    lag_ms = np.arange(-L_, L_ + 1) / fs * 1000.0
-    with open(out / "curves.csv", "w", encoding="utf-8-sig", newline="") as f:
-        w = csv.writer(f)
-        w.writerow(["lag_ms"] + list(curves.keys()))
-        for i in range(len(lag_ms)):
-            w.writerow([round(lag_ms[i], 3)] + [("" if not np.isfinite(c[i]) else round(float(c[i]), 5))
-                                                for c in curves.values()])
-
-    if not args.no_plots:
-        setup_font()
-        for sig in SIGS:
-            plot_all(out / f"timeseries_{sig}.png", usable, sig, S, tt)
-        plot_combined_disp(out / "combined_disp.png", usable, S, tt)
-        plot_combined_disp_norm(out / "combined_disp_norm.png", usable, S, tt)
-        plot_pair_disp_norm(out / "pair_disp_norm.png", pairs, S, tt)
-        
-        # 新規追加: ペア間の相対変位の大きさ
-        plot_pair_relative_disp_norm(out / "pair_relative_disp_norm.png", pairs, S, tt)
-        
-        for a, b in pairs:
-            plot_pair(out / f"pair_{a}-{b}.png", a, b, S, results[(a, b)], tt, fs, L_ / fs * 1000.0)
-
-    info = dict(status="ok", session=session, trial=trial.name, kind=trial_kind(trial), crop=crop,
-                span_s=[0.0, round(T, 3)] if span else [0.0, round(float(tt[-1]), 3)],
-                fs_hz=round(fs, 3), n_samples=n, joints=args.joints, pairs=[f"{a}-{b}" for a, b in pairs],
-                fc_hz=args.fc, max_lag_s=args.max_lag, gap_limit_s=args.gap,
-                valid_frac_raw=raw_frac, valid_frac_grid=valid_frac, n_spikes_removed=n_spikes,
-                lr_swapped_frac=(None if swapped is None else round(float(swapped[sel].mean()), 4)),
-                sign_convention="R(tau)=sum a(t)b(t-tau); tau>0 -> a lags b (b leads); tau<0 -> a leads")
-    (out / "info.json").write_text(json.dumps(info, ensure_ascii=False, indent=1), encoding="utf-8")
-    return info
+        if (d / "joints" / "rs_joints.npz").exists():  # p がセッション
+            trials.append(d)
+        elif d.name.lower().startswith("aim"):         # p が recordings
+            trials += [t for t in sorted(d.iterdir()) if (t / "joints" / "rs_joints.npz").exists()]
+    return trials
 
 
+# ---------- データの読み込みと前処理 ----------
+def load_displacement(trial, joints, fc):
+    """各関節の変位（平均を引いた位置）を返す。 戻り値: 時間, {関節名: (N,3)}"""
+    z = np.load(trial / "joints" / "rs_joints.npz")
+    names = [str(n) for n in z["names"]]
+    t = z["t"].astype(float)
+    P = z["P_C"].astype(float)
+
+    # 時間順に並べる
+    order = np.argsort(t)
+    t = t[order]
+    P = P[order]
+
+    fs = 1.0 / np.median(np.diff(t))              # 標本化周波数
+    grid = np.arange(t[0], t[-1], 1.0 / fs)        # 等間隔の時間
+
+    b, a = butter(FILTER_ORDER, min(fc / (fs / 2), MAX_NORM_FREQ))     # 低域通過フィルタ
+
+    disp = {}
+    for j in joints:
+        X = P[:, names.index(j), :]
+        ok = np.isfinite(X).all(axis=1)            # 欠損(NaN)でないフレーム
+        # 等間隔の時間に補間
+        Y = np.column_stack([np.interp(grid, t[ok], X[ok, k]) for k in range(3)])
+        Y = filtfilt(b, a, Y, axis=0)
+        disp[j] = Y - Y.mean(axis=0)               # 平均を引いて変位にする
+    return grid - grid[0], disp
+
+
+# ---------- 図 ----------
+def plot_combined_disp(path, joints, disp, tt):
+    fig, axs = plt.subplots(3, 1, figsize=FIGSIZE_DISP, sharex=True)
+    for k, label in enumerate("XYZ"):
+        for j in joints:
+            axs[k].plot(tt, disp[j][:, k], label=j)
+        axs[k].set_ylabel(f"{label} [mm]")
+        axs[k].set_ylim(*Y_RANGE_DISP)
+        axs[k].grid(alpha=GRID_ALPHA)
+    axs[0].legend(ncol=len(joints), loc="upper right")
+    axs[-1].set_xlabel("time [s]")
+    fig.suptitle("Displacement of all joints")
+    fig.tight_layout()
+    fig.savefig(path, dpi=DPI)
+    plt.close(fig)
+
+
+def plot_combined_disp_norm(path, joints, disp, tt):
+    fig, ax = plt.subplots(figsize=FIGSIZE_NORM)
+    for j in joints:
+        ax.plot(tt, np.linalg.norm(disp[j], axis=1), label=j)
+    ax.set_xlabel("time [s]")
+    ax.set_ylabel("|displacement| [mm]")
+    ax.set_ylim(*Y_RANGE_NORM)
+    ax.grid(alpha=GRID_ALPHA)
+    ax.legend(ncol=len(joints), loc="upper right")
+    fig.suptitle("Displacement magnitude of all joints")
+    fig.tight_layout()
+    fig.savefig(path, dpi=DPI)
+    plt.close(fig)
+
+
+def plot_pair_relative_disp_norm(path, pairs, disp, tt):
+    fig, axs = plt.subplots(len(pairs), 1, figsize=(PAIR_FIG_WIDTH, PAIR_FIG_ROW_HEIGHT * len(pairs) + PAIR_FIG_MARGIN), sharex=True)
+    axs = np.atleast_1d(axs)
+    for ax, (a, b) in zip(axs, pairs):
+        rel = disp[b] - disp[a]                    # 例: 肘の変位 - 肩の変位
+        ax.plot(tt, np.linalg.norm(rel, axis=1), color="tab:purple")
+        ax.set_ylabel(f"|{b} - {a}| [mm]")
+        ax.set_ylim(*Y_RANGE_PAIR)
+        ax.grid(alpha=GRID_ALPHA)
+    axs[-1].set_xlabel("time [s]")
+    fig.suptitle("Relative displacement magnitude between joints")
+    fig.tight_layout()
+    fig.savefig(path, dpi=DPI)
+    plt.close(fig)
+
+
+# ---------- メイン ----------
 def main():
-    ap = argparse.ArgumentParser(description="試行ごとの関節間の相互相関")
-    ap.add_argument("path", nargs="*", default=["recordings"],
-                    help="recordings（既定。中の aim* の全試行）/ aim* のセッション / 試行のフォルダ。"
-                         "recordings/aim_kakeru* のようなパターンも可")
-    ap.add_argument("--out", default="analysis", help="出力のルート（既定 analysis）")
-    ap.add_argument("--joints", nargs="+", default=["shoulder", "elbow", "wrist", "mcp3"],
-                    help="関節（連結の順）。手首を Pose 側にするなら wrist_pose")
-    ap.add_argument("--pairs", choices=["chain", "all"], default="chain", help="chain = 隣どうし, all = 全組み合わせ")
-    ap.add_argument("--fc", type=float, default=5.0, help="低域通過 [Hz]（既定 5）")
-    ap.add_argument("--max-lag", type=float, default=1.0, help="ラグの範囲 ±[s]")
-    ap.add_argument("--gap", type=float, default=0.5, help="これより長く欠けた区間は欠損のまま [s]")
-    ap.add_argument("--include-static", action="store_true", help="静止の試行も処理する")
-    ap.add_argument("--no-crop", action="store_true", help="task.csv があっても全フレームを使う")
-    ap.add_argument("--no-plots", action="store_true")
+    ap = argparse.ArgumentParser(description="関節の変位の図を出力する")
+    ap.add_argument("path", nargs="?", default=DEFAULT_PATH, help="recordings / セッション / 試行のフォルダ")
+    ap.add_argument("--out", default=DEFAULT_OUT, help="出力先")
+    ap.add_argument("--joints", nargs="+", default=DEFAULT_JOINTS)
+    ap.add_argument("--fc", type=float, default=DEFAULT_FC, help="低域通過 [Hz]")
     args = ap.parse_args()
 
-    trials = collect(args.path)
+    trials = find_trials(args.path)
     if not trials:
-        sys.exit(f"[ERROR] 対象の試行が見つからない: {args.path}\n"
-                 f"  recordings/aim*/<試行>/joints/rs_joints.npz の形で置かれているか確認（実行した場所: {Path.cwd()}）")
-    by_session = {}
-    for tr in trials:
-        by_session.setdefault(tr.parent.name, []).append(tr.name)
-    print(f"[対象] {len(by_session)} セッション, {len(trials)} 試行")
-    for s, ts in by_session.items():
-        print(f"  {s}: {len(ts)} 試行")
-    t0 = time.time()
-    done = skipped = 0
-    for k, tr in enumerate(trials, 1):
-        if not args.include_static and ("static" in tr.name.lower() or trial_kind(tr) == "static"):
-            print(f"[{k}/{len(trials)}] {tr.parent.name}/{tr.name}: 静止の試行なので飛ばす（--include-static で処理）")
-            skipped += 1
-            continue
-        try:
-            info = process_trial(tr, args.out, args)
-        except SystemExit:
-            raise
-        except Exception as e:
-            print(f"[{k}/{len(trials)}] {tr.parent.name}/{tr.name}: 失敗 {type(e).__name__}: {e}")
-            skipped += 1
-            continue
-        if info["status"] == "ok":
-            print(f"[{k}/{len(trials)}] {tr.parent.name}/{tr.name}: fs {info['fs_hz']:.1f} Hz, "
-                  f"有効率 " + " ".join(f"{j}={v:.0%}" for j, v in info["valid_frac_grid"].items()))
-            done += 1
-        else:
-            print(f"[{k}/{len(trials)}] {tr.parent.name}/{tr.name}: 飛ばした（{info['reason']}）")
-            skipped += 1
-    print(f"[DONE] 処理 {done} 試行，飛ばした {skipped} 試行，{time.time() - t0:.0f} s -> {Path(args.out).resolve()}")
+        raise SystemExit(f"試行が見つかりません: {args.path}")
+
+    pairs = list(zip(args.joints[:-1], args.joints[1:]))   # 隣どうしのペア
+
+    for trial in trials:
+        out = Path(args.out) / trial.parent.name / trial.name
+        out.mkdir(parents=True, exist_ok=True)
+
+        tt, disp = load_displacement(trial, args.joints, args.fc)
+
+        plot_combined_disp(out / "combined_disp.png", args.joints, disp, tt)
+        plot_combined_disp_norm(out / "combined_disp_norm.png", args.joints, disp, tt)
+        plot_pair_relative_disp_norm(out / "pair_relative_disp_norm.png", pairs, disp, tt)
+        print(f"完了: {trial.parent.name}/{trial.name}")
 
 
 if __name__ == "__main__":

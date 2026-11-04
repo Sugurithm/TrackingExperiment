@@ -1,0 +1,7 @@
+label,person,group,dpi,trial,band,seed,attempt,axis,pair,lag_ms,peak_r
+Keito400,Keito,nonFPS,400,trial_02_slow_s2,slow,2,1,h,shoulder-elbow,42.04804838897456,0.9229824434557935
+Keito400,Keito,nonFPS,400,trial_02_slow_s2,slow,2,1,h,elbow-wrist,-302.36005783081055,-0.10365429326459046
+Keito400,Keito,nonFPS,400,trial_02_slow_s2,slow,2,1,h,wrist-mcp3,-0.8992745537562967,0.9958792009517964
+Keito400,Keito,nonFPS,400,trial_02_slow_s2,slow,2,1,v,shoulder-elbow,-11.063826949773906,0.5178979756100034
+Keito400,Keito,nonFPS,400,trial_02_slow_s2,slow,2,1,v,elbow-wrist,-51.7860161418388,0.950324206058019
+Keito400,Keito,nonFPS,400,trial_02_slow_s2,slow,2,1,v,wrist-mcp3,-28.0649876161616,0.9877187837274264

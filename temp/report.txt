@@ -1,0 +1,19 @@
+stroke_feasibility report
+trials: 6   strokes: 258   valid: 258
+hand gain |D|/A (sanity: ~1 if units, lag and windows are right): median 0.99, IQR 0.89-1.11
+Spearman rho(log A, log vmax) = 0.65  (|rho| near 1 means amplitude and speed cannot be separated)
+noise (sd of stroke displacement along the hand direction, median over valid strokes) [mm]: S=2.8, U=4.0, F=4.0, M=4.0, H=4.0, hand=2.8
+
+bins of target stroke amplitude A [mm]: ['0-5', '5-10', '10-20', '20-40', '40-80', '80+']
+'enough' = hand-detectable strokes >= 15 (|D| > 2.0 x noise)
+
+person  dpi  band |       0-5      5-10     10-20     20-40     40-80       80+   (n_hand_detectable / n_total)
+Suguru   400 fast |    0/0       0/0       5/5      20/20 *   62/62 *   90/90 *
+Suguru   400 slow |    0/0       0/0       0/0       2/2      35/35 *   44/44 *
+  (* = enough)
+
+link detectability by amplitude bin (pooled; fraction of hand-detectable strokes whose link motion > snr x noise):
+     10-20 mm (n=   5): S=0.00 U=0.60 F=0.60 M=0.60 H=0.40
+     20-40 mm (n=  22): S=0.09 U=0.50 F=0.77 M=0.55 H=0.36
+     40-80 mm (n=  97): S=0.21 U=0.60 F=0.97 M=0.45 H=0.71
+       80+ mm (n= 134): S=0.25 U=0.65 F=1.00 M=0.39 H=0.94
