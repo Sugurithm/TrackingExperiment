@@ -5,9 +5,6 @@ __pycache__/
 *.pyc
 
 recordings/
-!recordings/**/
-!recordings/**/joints/
-!recordings/**/joints/rs_joints.npz
 db_session/
 analysis/
 temp/
