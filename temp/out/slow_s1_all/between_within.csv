@@ -1,4 +1,0 @@
-dpi,band,axis,size,link,n_persons,between_sd,within_raw_sd,within_sd,ratio,ratio_raw,n_persons_within
-400.0,slow,horiz,large,prox,9,0.08769514905097325,nan,nan,nan,nan,0
-400.0,slow,horiz,large,fore,9,0.04918806634721553,nan,nan,nan,nan,0
-400.0,slow,horiz,large,hand,9,0.08442287328097445,nan,nan,nan,nan,0

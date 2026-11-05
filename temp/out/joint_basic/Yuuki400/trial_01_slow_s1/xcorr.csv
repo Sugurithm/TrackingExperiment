@@ -1,7 +1,0 @@
-label,person,group,dpi,trial,band,seed,attempt,axis,pair,lag_ms,peak_r
-Yuuki400,Yuuki,nonFPS,400,trial_01_slow_s1,slow,1,1,h,shoulder-elbow,27.952577752692207,0.7737016873528809
-Yuuki400,Yuuki,nonFPS,400,trial_01_slow_s1,slow,1,1,h,elbow-wrist,-274.0738391155059,0.6702258343426036
-Yuuki400,Yuuki,nonFPS,400,trial_01_slow_s1,slow,1,1,h,wrist-mcp3,-12.430034336980933,0.9978721485355508
-Yuuki400,Yuuki,nonFPS,400,trial_01_slow_s1,slow,1,1,v,shoulder-elbow,-195.0659401077831,0.8318307730546071
-Yuuki400,Yuuki,nonFPS,400,trial_01_slow_s1,slow,1,1,v,elbow-wrist,-81.52287580615888,0.9536694607567955
-Yuuki400,Yuuki,nonFPS,400,trial_01_slow_s1,slow,1,1,v,wrist-mcp3,-9.861822172645248,0.9974067698046706

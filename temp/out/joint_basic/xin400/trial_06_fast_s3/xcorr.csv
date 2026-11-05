@@ -1,7 +1,0 @@
-label,person,group,dpi,trial,band,seed,attempt,axis,pair,lag_ms,peak_r
-xin400,Xin,FPS,400,trial_06_fast_s3,fast,3,1,h,shoulder-elbow,69.2931308436205,0.5369343859293164
-xin400,Xin,FPS,400,trial_06_fast_s3,fast,3,1,h,elbow-wrist,-302.3868799209595,0.4765625063650006
-xin400,Xin,FPS,400,trial_06_fast_s3,fast,3,1,h,wrist-mcp3,-55.642918670477364,0.9564565369481073
-xin400,Xin,FPS,400,trial_06_fast_s3,fast,3,1,v,shoulder-elbow,-55.100274626912785,0.808201301891957
-xin400,Xin,FPS,400,trial_06_fast_s3,fast,3,1,v,elbow-wrist,-40.11748238803961,0.9796677225442963
-xin400,Xin,FPS,400,trial_06_fast_s3,fast,3,1,v,wrist-mcp3,-3.3560305191809645,0.9831014203170383

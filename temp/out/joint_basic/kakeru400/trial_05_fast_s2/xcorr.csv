@@ -1,7 +1,0 @@
-label,person,group,dpi,trial,band,seed,attempt,axis,pair,lag_ms,peak_r
-kakeru400,Kakeru,FPS,400,trial_05_fast_s2,fast,2,1,h,shoulder-elbow,225.1935481970398,0.48643002141336095
-kakeru400,Kakeru,FPS,400,trial_05_fast_s2,fast,2,1,h,elbow-wrist,-302.3632764816284,0.4183243640811872
-kakeru400,Kakeru,FPS,400,trial_05_fast_s2,fast,2,1,h,wrist-mcp3,-33.512822888108445,0.9727355703104035
-kakeru400,Kakeru,FPS,400,trial_05_fast_s2,fast,2,1,v,shoulder-elbow,-31.424906370375066,0.925844142225996
-kakeru400,Kakeru,FPS,400,trial_05_fast_s2,fast,2,1,v,elbow-wrist,-57.956507518950126,0.9876045869785381
-kakeru400,Kakeru,FPS,400,trial_05_fast_s2,fast,2,1,v,wrist-mcp3,-10.608400628216117,0.9961207974982622

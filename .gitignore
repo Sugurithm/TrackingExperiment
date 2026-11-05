@@ -4,17 +4,10 @@ models/
 __pycache__/
 *.pyc
 
-# RealSense 録画（巨大）— ローカルに残し Git には rgb/ のみ載せる
 recordings/
+!recordings/**/
+!recordings/**/joints/
+!recordings/**/joints/rs_joints.npz
 db_session/
 analysis/
-# recordings/**/*.mp4
-# recordings/**/*.csv
-# recordings/verify/
-# recordings/calib**/
-# trial 配下は rgb/ のみ Git 対象（session.db3 は上の **/session.db3 でも除外）
-# recordings/trial_*/
-# !recordings/trial_*/
-# recordings/trial_*/**
-# !recordings/trial_*/rgb/
-# !recordings/trial_*/rgb/**
+temp/

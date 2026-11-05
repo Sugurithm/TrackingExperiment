@@ -1,7 +1,0 @@
-label,person,group,dpi,trial,band,seed,attempt,axis,pair,lag_ms,peak_r
-Suzuka400,Suzuka,nonFPS,400,trial_05_fast_s2,fast,2,1,h,shoulder-elbow,141.63988010133815,0.33806393844323207
-Suzuka400,Suzuka,nonFPS,400,trial_05_fast_s2,fast,2,1,h,elbow-wrist,83.1878321270639,-0.1030825964795044
-Suzuka400,Suzuka,nonFPS,400,trial_05_fast_s2,fast,2,1,h,wrist-mcp3,-9.010503036012553,0.995715589387489
-Suzuka400,Suzuka,nonFPS,400,trial_05_fast_s2,fast,2,1,v,shoulder-elbow,-217.37630888424513,0.7834218087144761
-Suzuka400,Suzuka,nonFPS,400,trial_05_fast_s2,fast,2,1,v,elbow-wrist,-37.54754782382611,0.9818366260308415
-Suzuka400,Suzuka,nonFPS,400,trial_05_fast_s2,fast,2,1,v,wrist-mcp3,-0.48821434381384726,0.9941653545328378

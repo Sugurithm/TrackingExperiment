@@ -1,7 +1,0 @@
-label,person,group,dpi,trial,band,seed,attempt,axis,pair,lag_ms,peak_r
-Kosuke400,Kosuke,nonFPS,400,trial_06_fast_s3,fast,3,1,h,shoulder-elbow,-13.9266171107839,0.1526399760990156
-Kosuke400,Kosuke,nonFPS,400,trial_06_fast_s3,fast,3,1,h,elbow-wrist,302.3815155029297,-0.12247931785632755
-Kosuke400,Kosuke,nonFPS,400,trial_06_fast_s3,fast,3,1,h,wrist-mcp3,-19.777829158271828,0.9853287038097197
-Kosuke400,Kosuke,nonFPS,400,trial_06_fast_s3,fast,3,1,v,shoulder-elbow,-119.16316970206421,0.15706958484841782
-Kosuke400,Kosuke,nonFPS,400,trial_06_fast_s3,fast,3,1,v,elbow-wrist,-31.667550425921316,0.9727095315656753
-Kosuke400,Kosuke,nonFPS,400,trial_06_fast_s3,fast,3,1,v,wrist-mcp3,-7.085709929647328,0.9935251696931316
