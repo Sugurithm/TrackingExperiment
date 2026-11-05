@@ -4,6 +4,7 @@ models/
 __pycache__/
 *.pyc
 
+
 joints_data/
 recordings/
 db_session/
