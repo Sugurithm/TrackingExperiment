@@ -1,7 +1,0 @@
-person,dpi,band,seed,attempt,trial,dpi_declared,cm_scale,lag_s,track_rms_cm,fs_joints,lr_swapped_frac,n_strokes,n_valid,noise_shoulder_mm,noise_elbow_mm,noise_wrist_pose_mm,noise_wrist_mm,noise_mcp3_mm
-Suguru,400.0,slow,1,1,trial_01_slow_s1,800.0,2.0,0.03,0.431,29.76,0.0,27,27,3.68,3.46,3.46,3.46,3.46
-Suguru,400.0,slow,2,1,trial_02_slow_s2,800.0,2.0,0.02,0.435,29.76,0.0,28,28,3.64,3.46,3.46,3.46,3.46
-Suguru,400.0,slow,3,1,trial_03_slow_s3,800.0,2.0,0.02,0.471,29.77,0.0,26,26,3.64,3.46,3.46,3.46,3.46
-Suguru,400.0,fast,1,1,trial_04_fast_s1,800.0,2.0,0.06,1.43,29.76,0.0,57,57,3.63,3.54,3.46,3.46,3.46
-Suguru,400.0,fast,2,1,trial_05_fast_s2,800.0,2.0,0.06,1.248,29.76,0.0,61,61,3.46,3.46,3.46,3.46,3.46
-Suguru,400.0,fast,3,1,trial_06_fast_s3,800.0,2.0,0.06,1.057,29.77,0.0,59,59,3.56,3.46,3.46,3.46,3.46
