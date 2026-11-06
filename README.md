@@ -1,13 +1,14 @@
 # TrackingExperience
 
 ### コミットメッセージ例
-add: 新機能・ファイルの追加
-fix: バグや不具合の修正
-refactor: コードの可読性向上や構造の整理
-docs: ドキュメントの変更
-chore: 雑務，設定ファイルの変更
+- add: 新機能・ファイルの追加
+- fix: バグや不具合の修正
+- refactor: コードの可読性向上や構造の整理
+- docs: ドキュメントの変更
+- chore: 雑務，設定ファイルの変更
 
 ### recordingのディレクトリ構造
+```text
 recordings/
 ├── aim_<name><mouseDPI>_<date>.../
 │   ├── trial_00_static_pre/
