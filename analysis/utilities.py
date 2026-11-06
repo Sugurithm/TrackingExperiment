@@ -15,11 +15,13 @@ from dataclasses import dataclass, field
 from pathlib import Path
 
 import numpy as np
+import pandas as pd
 from scipy.signal import butter, filtfilt
 
 # ---------- 共通の設定 ----------
 JOINTS = ["shoulder", "elbow", "wrist", "mcp3"]   # 関節（根元から末端への連結順）
 NPZ_PATH = Path("joints") / "rs_joints.npz"       # 試行フォルダ内の関節データ
+TASK_CSV = "task.csv"                             # 試行フォルダ内の課題ログ（epoch で RealSense と時刻合わせ）
 FILTER_ORDER = 4                                  # ローパスフィルタの次数
 MAX_NORM_FREQ = 0.99                              # 遮断周波数の上限（ナイキスト比）
 
@@ -42,11 +44,14 @@ def has_joint_data(d):
 @dataclass
 class TrialData:
     """前処理済みの 1 試行。disp[関節] は平均を引いた変位 (N, 3) [mm]"""
-    tt: np.ndarray            # 時間 [s]（先頭を 0 とする）
+    tt: np.ndarray            # 時間 [s]（切り出したときは課題時刻 t: 解析区間の先頭 = 0）
     fs: float                 # サンプリング周波数 [Hz]
     mean: dict                # 関節ごとの平均位置 (3,)
     disp: dict                # 関節ごとの変位 (N, 3)
     joints: list = field(default_factory=lambda: list(JOINTS))
+    cursor: np.ndarray = None  # カーソル位置 (N, 2) [cm]（画面上の x 右・y 上）。task.csv がないと None
+    target: np.ndarray = None  # ターゲット位置 (N, 2) [cm]（同上）
+    cropped: bool = False     # 解析区間（task.csv の 0 ≤ t ≤ 最後）に切り出したか
 
     def norm(self, joint):
         """変位の大きさ √(dx²+dy²+dz²)  (N,)"""
@@ -56,44 +61,89 @@ class TrialData:
         """相対変位 = 遠位の変位 - 近位の変位  (N, 3)"""
         return self.disp[distal] - self.disp[proximal]
 
+    def vel(self, joint):
+        """関節の速度 (N, 3) [mm/s]（中心差分）"""
+        return np.gradient(self.disp[joint], 1.0 / self.fs, axis=0)
+
+    def relative_vel(self, proximal, distal):
+        """相対速度 = 遠位の速度 - 近位の速度  (N, 3) [mm/s]"""
+        return self.vel(distal) - self.vel(proximal)
+
+    def cursor_vel(self):
+        """カーソルの速度 (N, 2) [cm/s]"""
+        return None if self.cursor is None else np.gradient(self.cursor, 1.0 / self.fs, axis=0)
+
+    def target_vel(self):
+        """ターゲットの速度 (N, 2) [cm/s]"""
+        return None if self.target is None else np.gradient(self.target, 1.0 / self.fs, axis=0)
+
     def pairs(self):
         return adjacent_pairs(self.joints)
 
 
-def load_trial(trial_dir, joints=JOINTS, fc=5.0):
+def read_task(trial_dir):
+    """task.csv を読む。なければ None"""
+    p = Path(trial_dir) / TASK_CSV
+    return pd.read_csv(p) if p.exists() else None
+
+
+def load_trial(trial_dir, joints=JOINTS, fc=5.0, crop=True):
     """
-    npzから3次元関節座標を読み，次の順に前処理して TrialData を返す．
-    ・時刻順に並べる → 等間隔グリッドへ線形補間(欠損も埋める) → ゼロ位相バターワース・ローパス(遮断 fc [Hz])→ 試行平均を引いて変位にする
+    npz から 3 次元関節座標を読み、次の順に前処理して TrialData を返す。
+      時刻順に並べる → 等間隔グリッドへ線形補間（欠損も埋まる）
+      → ゼロ位相バターワース・ローパス（遮断 fc [Hz]）
+      → crop=True かつ task.csv があれば解析区間だけを切り出す
+         （npz の t と task.csv の epoch はどちらも PC の時刻 [s]。
+           記録にはカウントダウン・立ち上がり・終わりの余分が入っているので除く）
+      → 区間の平均を引いて変位にする
+    フィルタは切り出す前の全区間にかける（区間の端でフィルタの端の影響を受けないため）。
+    task.csv があれば、カーソルとターゲットの位置も同じグリッド・同じフィルタで並べて
+    cursor / target に入れる。
     """
     z = np.load(Path(trial_dir) / NPZ_PATH)
     names = [str(n) for n in z["names"]]
     t = z["t"].astype(float)
     P = z["P_C"].astype(float)            # カメラ座標系の位置 (フレーム数, 関節数, 3)
 
-    # 時刻順に並べる
     order = np.argsort(t)
     t, P = t[order], P[order]
 
-    # サンプリング周波数を求める．
-    fs = 1.0 / np.median(np.diff(t))
-    # 等間隔グリッドへ線形補間(欠損も埋める)
+    fs = 1.0 / np.median(np.diff(t))      # 時間間隔の中央値から求める
     grid = np.arange(t[0], t[-1], 1.0 / fs)
     b, a = butter(FILTER_ORDER, min(fc / (fs / 2), MAX_NORM_FREQ))
 
+    Y = {}
+    for j in joints:
+        X = P[:, names.index(j), :]
+        ok = np.isfinite(X).all(axis=1)   # 欠損（NaN/Inf）でないフレーム
+        Yj = np.column_stack([np.interp(grid, t[ok], X[ok, k]) for k in range(3)])
+        Y[j] = filtfilt(b, a, Yj, axis=0)
+
+    tt = grid - grid[0]
+    keep = np.ones(len(grid), bool)
+    screen = {"cursor": None, "target": None}
+    task = read_task(trial_dir) if crop else None
+    if task is not None:
+        # 課題時刻 t = epoch - offset（task_core: epoch = epoch0 + 経過時間，t = 経過時間 - 定数）
+        offset = float(np.median(task["epoch"] - task["t"]))
+        tt = grid - offset
+        keep = (tt >= 0) & (tt <= task["t"].max())
+        if keep.sum() < 2:
+            raise ValueError(f"{trial_dir}: 関節データと task.csv の時刻が重なりません")
+        for name in screen:
+            C = np.column_stack([np.interp(tt, task["t"], task[f"{name}_{ax}_cm"]) for ax in "xy"])
+            screen[name] = filtfilt(b, a, C, axis=0)[keep]
+        tt = tt[keep]
+    elif crop:
+        print(f"[注意] task.csv がないので切り出しません: {trial_dir}")
+
     mean, disp = {}, {}
     for j in joints:
-        # 関節jの3次元座標を取り出す．
-        X = P[:, names.index(j), :]
-        # 欠損（NaN/Inf）でないフレームを抽出する．
-        ok = np.isfinite(X).all(axis=1)
-        # 線形補間で等間隔グリッドに変換する．
-        Y = np.column_stack([np.interp(grid, t[ok], X[ok, k]) for k in range(3)])
-        Y = filtfilt(b, a, Y, axis=0)
-
-        # 試行平均を引いて変位にする．
-        mean[j] = Y.mean(axis=0)
-        disp[j] = Y - mean[j]
-    return TrialData(tt=grid - grid[0], fs=fs, mean=mean, disp=disp, joints=list(joints))
+        Yj = Y[j][keep]
+        mean[j] = Yj.mean(axis=0)
+        disp[j] = Yj - mean[j]
+    return TrialData(tt=tt, fs=fs, mean=mean, disp=disp, joints=list(joints),
+                     cursor=screen["cursor"], target=screen["target"], cropped=task is not None)
 
 
 # =====================================================================
