@@ -10,15 +10,15 @@ SESSIONS … 解析の対象にするセッション．ここに並べたもの�
 """
 
 SESSIONS = [
-    dict(dir="recordings/aim_kakeru400_20261022_123951", person="Kakeru", group="FPS"),
-    dict(dir="recordings/aim_Keito400_20261021_170947", person="Keito", group="nonFPS"),
-    dict(dir="recordings/aim_Kosuke400_20261021_172948", person="Kosuke", group="nonFPS"),
-    dict(dir="recordings/aim_Suguru400_20261021_175327", person="Suguru", group="FPS"),
-    dict(dir="recordings/aim_Syou400_20261022_135724", person="Syou", group="FPS"),
-    dict(dir="recordings/aim_xin400_20261022_125957", person="Xin", group="FPS"),
-    dict(dir="recordings/aim_Yuuki400_20261022_154046", person="Yuuki", group="nonFPS"),
-    dict(dir="recordings/aim_Yuya400_20261022_134407", person="Yuya", group="FPS"),
-    dict(dir="recordings/aim_Suzuka400_20261022_155937", person="Suzuka", group="nonFPS"),
+    dict(dir="recordings/aim_kakeru400_20261022_123951", person="A", group="FPS"),
+    dict(dir="recordings/aim_Keito400_20261021_170947", person="B", group="nonFPS"),
+    dict(dir="recordings/aim_Kosuke400_20261021_172948", person="C", group="nonFPS"),
+    dict(dir="recordings/aim_Suguru400_20261021_175327", person="D", group="FPS"),
+    dict(dir="recordings/aim_Syou400_20261022_135724", person="E", group="FPS"),
+    dict(dir="recordings/aim_xin400_20261022_125957", person="F", group="FPS"),
+    dict(dir="recordings/aim_Yuuki400_20261022_154046", person="G", group="nonFPS"),
+    dict(dir="recordings/aim_Yuya400_20261022_134407", person="H", group="FPS"),
+    dict(dir="recordings/aim_Suzuka400_20261022_155937", person="I", group="nonFPS"),
 ]
 
 ATTEMPT = "last"   # やり直した試行 (_2, _3) が複数あるとき．"last" / "first" / "all"

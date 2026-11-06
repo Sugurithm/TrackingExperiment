@@ -8,5 +8,5 @@ __pycache__/
 joints_data/
 recordings/
 db_session/
-analysis/
+analysis/out/
 temp/
