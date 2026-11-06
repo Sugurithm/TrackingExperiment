@@ -7,7 +7,7 @@
   python experiment/60fps_joints.py --jobs 2            # 2 本ずつ並列（PC による．先に --plan で本数を確認）
   python experiment/60fps_joints.py --video-fps 0       # 確認動画を作らない
 
-対象 = temp/compare_config.py の SESSIONS に並べたセッション
+対象 = experiment/joints_sessions.py の SESSIONS に並べたセッション
       + recordings/aim_* にあって SESSIONS に無く，フォルダ名の dpi が 400 / 800 のセッション（既定で自動追加．1600 などは対象外）
 の試行すべて（trial_00_static_pre ややり直し _2, _3 も含む）．
 --config-only で自動追加をやめる．--compare NAME を付けると，COMPARES のその比較が使う試行
@@ -44,7 +44,7 @@ import numpy as np
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 ROOT = os.path.dirname(HERE)
-DEFAULT_CONFIG = os.path.join(ROOT, "temp", "compare_config.py")
+DEFAULT_CONFIG = os.path.join(HERE, "joints_sessions.py")
 CUR = "rs_joints.npz"             # 解析が読む名前（60 fps にする）
 OLD30 = "rs_joints_fps30.npz"     # 30 fps の結果の退避先（残す）
 VIDEO_NAME = "rs_joints_{fps}fps.mp4"
@@ -70,7 +70,9 @@ def load_config(path):
     spec = importlib.util.spec_from_file_location("compare_config", path)
     m = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(m)
-    return list(getattr(m, "SESSIONS", [])), list(getattr(m, "COMPARES", []))
+    # SESSIONS はフォルダの文字列でも dict(dir=..., person=..., group=..., label=...) でもよい
+    sessions = [dict(dir=e) if isinstance(e, str) else dict(e) for e in getattr(m, "SESSIONS", [])]
+    return sessions, list(getattr(m, "COMPARES", []))
 
 
 def resolve_dir(p):
@@ -357,7 +359,7 @@ def log_line(trial, result, sec):
 # ---------------------------------------------------------------- メイン
 def main():
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
-    ap.add_argument("--config", default=DEFAULT_CONFIG, help="SESSIONS を持つ設定ファイル（既定 temp/compare_config.py）")
+    ap.add_argument("--config", default=DEFAULT_CONFIG, help="SESSIONS を持つ設定ファイル（既定 experiment/joints_sessions.py）")
     ap.add_argument("--config-only", action="store_true",
                     help="recordings/aim_* の自動追加（800 dpi など）をせず，SESSIONS だけを対象にする")
     ap.add_argument("--compare", default=None, metavar="NAME", help="COMPARES のその比較が使う試行だけに絞る")
