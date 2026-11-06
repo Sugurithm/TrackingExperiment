@@ -74,7 +74,7 @@ def collect():
 # ---------- 図 ----------
 def plot_link_share(path, df):
     """人ごとの寄与率（左: slow、右: fast）"""
-    order, _ = person_order(df)
+    order, group_of = person_order(df)
     fig, axs = plt.subplots(1, 2, figsize=(14, 4), sharey=True)
     for ax, band in zip(axs, ["slow", "fast"]):
         g = df[df.band == band].groupby("person")[SHARE_COLS].agg(["mean", "std"]).reindex(order)
@@ -82,10 +82,12 @@ def plot_link_share(path, df):
             ax.bar(np.arange(len(order)) + (i - 1.5) * 0.2, g[(col, "mean")], 0.2,
                    yerr=g[(col, "std")], capsize=2, label=name.replace("_", " "))
         ax.set_xticks(range(len(order)))
-        ax.set_xticklabels(order, rotation=30)
+        ax.set_xticklabels([f"{p}\n({group_of[p]})" for p in order])
         ax.axhline(0, color="gray", lw=0.8)
         ax.set_title(band)
         ax.grid(alpha=0.3)
+    for ax in axs:
+        ax.set_xlabel("participant")
     axs[0].set_ylabel("share of tip displacement")
     axs[0].legend(ncol=4)
     save_fig(fig, path, DPI)

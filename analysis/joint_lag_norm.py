@@ -18,17 +18,16 @@ import pandas as pd
 import matplotlib.pyplot as plt
 from scipy.stats import spearmanr
 
-HERE = Path(__file__).resolve().parent        # temp/
-ROOT = HERE.parent                            # リポジトリ直下
+HERE = Path(__file__).resolve().parent
+ROOT = HERE.parent
 sys.path.insert(0, str(HERE))
-import compare_config as cfg                  # noqa: E402
-from utilities import (adjacent_pairs, iter_config_trials, load_trial,  # noqa: E402
-                       person_order, save_fig)
+import compare_config as cfg
+from utilities import (adjacent_pairs, iter_config_trials, load_trial, person_order, save_fig)
 
 # ---------- 設定 ----------
 OUT_DIR = HERE / cfg.OUT / "joint_lag_norm"
 
-MAX_LAG = 0.3          # 相互相関でずらす最大範囲 [s]（±）
+MAX_LAG = 0.5          # 相互相関でずらす最大範囲 [s]（±）
 MIN_R = 0.0            # 有効判定: ピーク相関がこれ以上（正の相関のみ対象）
 EDGE_MS = 10.0         # 有効判定: ピークが範囲の端からこの ms 以上内側にあること
 
