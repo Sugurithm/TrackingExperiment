@@ -26,7 +26,7 @@ joint_use_by_cursor_direction.py — カーソルの移動方向（8 方向）�
   all_lag.csv            試行 × 信号 × 方向 × ペアの遅れ
   person_share.csv       被験者 × 帯域 × 方向の平均・SD
   person_lag.csv         被験者 × 帯域 × 方向 × ペアの遅れの平均・SD（信号 = 速さ）
-  summary_lag.csv        信号 × ペア × 方向の ICC・slow/fast の順位相関
+  summary_lag.csv        信号 × ペア × 方向の ICC
   share_proj_by_dir.png  射影の寄与率（主）
   share_pow_by_dir.png   パワーの寄与率（補助）
   lag_by_dir.png         遅れ（速さ）
@@ -37,7 +37,6 @@ from pathlib import Path
 import numpy as np
 import pandas as pd
 import matplotlib.pyplot as plt
-from scipy.stats import spearmanr
 
 HERE = Path(__file__).resolve().parent
 ROOT = HERE.parent
@@ -228,15 +227,11 @@ def summarize(share, lag):
     rows = []
     for (sname, pair, dname), d in lag.groupby(["signal", "pair", "dir"], sort=False):
         ok = d[d.valid]
-        m = ok.groupby(["person", "band"]).lag_ms.mean().unstack()
-        both = {"slow", "fast"} <= set(m.columns)
-        m = m.dropna() if both else m
         rows.append({
             "signal": sname, "pair": pair, "dir": dname,
             "n_valid": len(ok), "n_excluded": len(d) - len(ok),
             "mean_frames": d.n_frames.mean(), "mean_lag_ms": ok.lag_ms.mean(), "mean_r": ok.peak_r.mean(),
             "icc": icc_oneway(ok.lag_ms, ok.person) if ok.person.nunique() >= 2 else np.nan,
-            "rho_slow_fast": spearmanr(m["slow"], m["fast"])[0] if both and len(m) >= 3 else np.nan,
         })
     return person_share, person_lag, pd.DataFrame(rows)
 

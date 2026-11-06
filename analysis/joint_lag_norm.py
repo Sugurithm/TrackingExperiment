@@ -6,7 +6,7 @@ joint_lag_norm.py — 変位ノルムの相互相関で、隣り合う関節の�
 出力: <cfg.OUT>/joint_lag_norm/
   all_lag_norm.csv   試行 × ペアごとの遅れとピーク相関
   person_lag.csv     被験者 × 帯域ごとの平均・SD
-  summary.csv        ペアごとの ICC・slow/fast の順位相関など
+  summary.csv        ペアごとの ICC など
   lag_by_person.png  被験者ごとの遅れのばらつき
   slow_vs_fast.png   slow と fast の平均遅れの散布図
 """
@@ -16,7 +16,6 @@ from pathlib import Path
 import numpy as np
 import pandas as pd
 import matplotlib.pyplot as plt
-from scipy.stats import spearmanr
 
 HERE = Path(__file__).resolve().parent
 ROOT = HERE.parent
@@ -131,13 +130,10 @@ def summarize(df):
                     "mean_ms": g.lag_ms.mean(), "sd_ms": g.lag_ms.std(ddof=1),
                     "mean_r": g.peak_r.mean(), "sd_r": g.peak_r.std(ddof=1),
                 })
-        m = ok.groupby(["person", "band"]).lag_ms.mean().unstack().dropna()
-        has_both = {"slow", "fast"} <= set(m.columns)
         rows_sum.append({
             "pair": pair, "n_valid": len(ok), "n_excluded": len(d) - len(ok),
             "mean_r": ok.peak_r.mean(),
             "icc": icc_oneway(ok.lag_ms, ok.person) if ok.person.nunique() >= 2 else np.nan,
-            "rho_slow_fast": spearmanr(m["slow"], m["fast"])[0] if len(m) >= 3 and has_both else np.nan,
         })
     return pd.DataFrame(rows_person), pd.DataFrame(rows_sum)
 
