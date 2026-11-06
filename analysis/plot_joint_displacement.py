@@ -1,11 +1,11 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 """
-xcorr_trial_simple.py — 関節の変位の図だけを出力する簡易版（試行 40 s 全体）
+plot_joint_displacement.py — 試行ごとの関節の変位の時系列を図にする（解析区間 40 s）
 
-対象の試行・遮断周波数・やり直しの扱いは compare_config（SESSIONS, FC, ATTEMPT）に従う。
+対象の試行・遮断周波数・やり直しの扱いは analysis_config（SESSIONS, FC, ATTEMPT）に従う。
 
-出力: <cfg.OUT>/xcorr_trial_simple/<セッション名>/<試行名>/
+出力: <cfg.OUT>/plot_joint_displacement/<セッション名>/<試行名>/
   combined_disp.png             全関節の変位（X, Y, Z ごとに重ねる）
   combined_disp_norm.png        全関節の変位の大きさ（ノルム）
   pair_relative_disp_norm.png   隣り合う関節の相対変位の大きさ
@@ -19,11 +19,11 @@ import matplotlib.pyplot as plt
 HERE = Path(__file__).resolve().parent
 ROOT = HERE.parent
 sys.path.insert(0, str(HERE))
-import compare_config as cfg  # noqa: E402
+import analysis_config as cfg  # noqa: E402
 from utilities import iter_config_trials, load_trial, save_fig  # noqa: E402
 
 # ---------- 設定 ----------
-OUT_DIR = HERE / cfg.OUT / "xcorr_trial_simple"
+OUT_DIR = HERE / cfg.OUT / "plot_joint_displacement"
 
 Y_RANGE_DISP = (-150, 150)   # combined_disp の Y 軸 [mm]
 Y_RANGE_NORM = (0, 200)      # combined_disp_norm の Y 軸 [mm]

@@ -8,7 +8,7 @@ joint_use_by_target_direction.py — ターゲットの移動方向（8 方向�
     ターゲットが向きを変えた直後は、手はまだ前の向きに動いていることがある。
     それも「求められたときの体の使い方」に含める。
 
-  link_share.py と joint_lag_norm.py の計算を、ターゲットの移動方向で仕分けたフレームごとにやり直す。
+  link_share_whole_trial.py と joint_lag_whole_trial.py の計算を、ターゲットの移動方向で仕分けたフレームごとにやり直す。
   方向を使うのはラベル付けだけ。関節はカメラ座標の 3 次元のまま扱う（成分に分けない）。
 
   1. 方向ラベル   d(t) = round(atan2(q̇_y, q̇_x) / 45°) mod 8
@@ -43,9 +43,8 @@ import matplotlib.pyplot as plt
 HERE = Path(__file__).resolve().parent
 ROOT = HERE.parent
 sys.path.insert(0, str(HERE))
-import compare_config as cfg  # noqa: E402
-from utilities import adjacent_pairs, iter_config_trials, load_trial, save_fig  # noqa: E402
-from joint_lag_norm import icc_oneway  # noqa: E402
+import analysis_config as cfg  # noqa: E402
+from utilities import adjacent_pairs, icc_oneway, iter_config_trials, load_trial, save_fig  # noqa: E402
 
 # ---------- 設定 ----------
 OUT_NAME = "joint_use_by_target_direction"
@@ -56,7 +55,7 @@ DIRS = ["R", "UR", "U", "UL", "L", "DL", "D", "DR"]
 DIR_DEG = [0, 45, 90, 135, 180, 225, 270, 315]
 N_DIR = len(DIRS)
 
-# リンク名: (近位の関節, 遠位の関節)。shoulder だけは肩そのものの速度（link_share.py と同じ）
+# リンク名: (近位の関節, 遠位の関節)。shoulder だけは肩そのものの速度（link_share_whole_trial.py と同じ）
 LINKS = {
     "shoulder":  (None, "shoulder"),
     "upper_arm": ("shoulder", "elbow"),
@@ -65,7 +64,7 @@ LINKS = {
 }
 TIP = "mcp3"
 
-# 遅れ（joint_lag_norm.py と同じ値）
+# 遅れ（joint_lag_whole_trial.py と同じ値）
 MAX_LAG = 0.5          # ずらす最大範囲 [s]（±）
 MIN_R = 0.0            # 有効判定: ピーク相関がこれ以上
 EDGE_MS = 10.0         # 有効判定: ピークが範囲の端からこの ms 以上内側
@@ -117,7 +116,7 @@ def shares(W, u, mask):
 
 
 def disp_share(data):
-    """元の link_share.py と同じ変位の寄与率（全フレームのみ）"""
+    """元の link_share_whole_trial.py と同じ変位の寄与率（全フレームのみ）"""
     tip = data.disp[TIP]
     den = np.sum(tip * tip)
     return {f"share_disp_{k}": float(np.sum((data.disp[b] if a is None else data.relative(a, b)) * tip) / den)
@@ -131,7 +130,7 @@ def xcorr_masked(a, b, mask, max_lag):
     """
     近位 a(t)（t ∈ mask）と遠位 b(t+τ) の組だけでピアソン相関をとり、τ をずらす。
     b(t+τ) は mask の外でもよい（区間を切るのではなく、試行全体の連続した信号をずらす）。
-    ピーク位置は joint_lag_norm.xcorr_direct と同じく放物線補間。プラスのラグ = b が遅れる。
+    ピーク位置は joint_lag_whole_trial.xcorr_direct と同じく放物線補間。プラスのラグ = b が遅れる。
     """
     idx = np.flatnonzero(mask)
     lags = np.arange(-max_lag, max_lag + 1)

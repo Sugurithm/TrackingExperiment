@@ -5,7 +5,7 @@ utilities.py — 関節解析スクリプトの共通部品
 
   1. 試行データ   : TrialData（変位・ノルム・相対変位を取り出す）と load_trial()
   2. 試行の探索   : Session / Trial と、config（SESSIONS, ATTEMPT）からの探し方
-  3. 図・表の補助 : 被験者の並び順、図の保存
+  3. 統計・図・表の補助 : ICC、被験者の並び順、図の保存
 
 解析スクリプト側には「何を計算して何を出力するか」だけを書き、
 データの読み込み・前処理・探索はすべてここに置く。
@@ -229,8 +229,24 @@ def iter_config_trials(cfg, root):
 
 
 # =====================================================================
-# 3. 図・表の補助
+# 3. 統計・図・表の補助
 # =====================================================================
+def icc_oneway(values, groups):
+    """一元配置の級内相関係数 ICC(1)（個人差の大きさ）"""
+    values, groups = np.asarray(values, float), np.asarray(groups)
+    labels = np.unique(groups)
+    n_i = np.array([np.sum(groups == g) for g in labels])
+    m_i = np.array([values[groups == g].mean() for g in labels])
+    N, k = len(values), len(labels)
+
+    ss_b = np.sum(n_i * (m_i - values.mean()) ** 2)
+    ss_w = sum(np.sum((values[groups == g] - m) ** 2) for g, m in zip(labels, m_i))
+
+    ms_b, ms_w = ss_b / (k - 1), ss_w / (N - k)
+    n0 = (N - np.sum(n_i ** 2) / N) / (k - 1)
+    return (ms_b - ms_w) / (ms_b + (n0 - 1) * ms_w)
+
+
 def person_order(df):
     """グループ順 → 名前順に並べた被験者リストと {被験者: グループ}"""
     p = df[["person", "group"]].drop_duplicates().sort_values(["group", "person"])

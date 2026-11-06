@@ -1,9 +1,9 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 """
-joint_lag_norm.py — 変位ノルムの相互相関で、隣り合う関節の遅れを人ごとに比べる（試行 40 s 全体）
+joint_lag_whole_trial.py — 隣り合う関節の遅れ（変位ノルムの相互相関，解析区間 40 s 全体）
 
-出力: <cfg.OUT>/joint_lag_norm/
+出力: <cfg.OUT>/joint_lag_whole_trial/
   all_lag_norm.csv   試行 × ペアごとの遅れとピーク相関
   person_lag.csv     被験者 × 帯域ごとの平均・SD
   summary.csv        ペアごとの ICC など
@@ -20,11 +20,12 @@ import matplotlib.pyplot as plt
 HERE = Path(__file__).resolve().parent
 ROOT = HERE.parent
 sys.path.insert(0, str(HERE))
-import compare_config as cfg
-from utilities import (adjacent_pairs, iter_config_trials, load_trial, person_order, save_fig)
+import analysis_config as cfg
+from utilities import (adjacent_pairs, icc_oneway, iter_config_trials, load_trial, person_order,
+                       save_fig)
 
 # ---------- 設定 ----------
-OUT_DIR = HERE / cfg.OUT / "joint_lag_norm"
+OUT_DIR = HERE / cfg.OUT / "joint_lag_whole_trial"
 
 MAX_LAG = 0.5          # 相互相関でずらす最大範囲 [s]（±）
 MIN_R = 0.0            # 有効判定: ピーク相関がこれ以上（正の相関のみ対象）
@@ -82,20 +83,6 @@ def lag_norm_trial(trial_dir):
     return out
 
 
-def icc_oneway(values, groups):
-    """一元配置の級内相関係数 ICC(1)（個人差の大きさ）"""
-    values, groups = np.asarray(values, float), np.asarray(groups)
-    labels = np.unique(groups)
-    n_i = np.array([np.sum(groups == g) for g in labels])
-    m_i = np.array([values[groups == g].mean() for g in labels])
-    N, k = len(values), len(labels)
-
-    ss_b = np.sum(n_i * (m_i - values.mean()) ** 2)
-    ss_w = sum(np.sum((values[groups == g] - m) ** 2) for g, m in zip(labels, m_i))
-
-    ms_b, ms_w = ss_b / (k - 1), ss_w / (N - k)
-    n0 = (N - np.sum(n_i ** 2) / N) / (k - 1)
-    return (ms_b - ms_w) / (ms_b + (n0 - 1) * ms_w)
 
 
 # ---------- 2. 収集と集計 ----------

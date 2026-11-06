@@ -1,14 +1,14 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 """
-link_share.py — 手先(MCP3)の変位に対する各リンクの射影寄与率（試行 40 s 全体）
+link_share_whole_trial.py — 手先(MCP3)の変位に対する各リンクの射影寄与率（解析区間 40 s 全体）
 
   手先の変位 tip = shoulder + upper_arm + forearm + hand
     shoulder  = 肩の変位
     upper_arm = 肘 - 肩、forearm = 手首 - 肘、hand = MCP3 - 手首 の相対変位
   寄与率 share_k = Σ(v_k · tip) / Σ|tip|²   （4 リンクの合計 = 1）
 
-出力: <cfg.OUT>/link_share/
+出力: <cfg.OUT>/link_share_whole_trial/
   all_link_share.csv     試行ごとの寄与率と RMS
   person_link_share.csv  被験者 × 帯域ごとの平均・SD
   link_share.png         被験者ごとの寄与率（slow / fast）
@@ -23,11 +23,11 @@ import matplotlib.pyplot as plt
 HERE = Path(__file__).resolve().parent
 ROOT = HERE.parent
 sys.path.insert(0, str(HERE))
-import compare_config as cfg  # noqa: E402
+import analysis_config as cfg  # noqa: E402
 from utilities import iter_config_trials, load_trial, person_order, save_fig  # noqa: E402
 
 # ---------- 設定 ----------
-OUT_DIR = HERE / cfg.OUT / "link_share"
+OUT_DIR = HERE / cfg.OUT / "link_share_whole_trial"
 # リンク名: (近位の関節, 遠位の関節)。shoulder だけは肩そのものの変位（近位なし）
 LINKS = {
     "shoulder":  (None, "shoulder"),
