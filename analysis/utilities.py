@@ -62,28 +62,35 @@ class TrialData:
 
 def load_trial(trial_dir, joints=JOINTS, fc=5.0):
     """
-    npz から 3 次元関節座標を読み、次の順に前処理して TrialData を返す。
-      時刻順に並べる → 等間隔グリッドへ線形補間（欠損も埋まる）
-      → ゼロ位相バターワース・ローパス（遮断 fc [Hz]）→ 試行平均を引いて変位にする
+    npzから3次元関節座標を読み，次の順に前処理して TrialData を返す．
+    ・時刻順に並べる → 等間隔グリッドへ線形補間(欠損も埋める) → ゼロ位相バターワース・ローパス(遮断 fc [Hz])→ 試行平均を引いて変位にする
     """
     z = np.load(Path(trial_dir) / NPZ_PATH)
     names = [str(n) for n in z["names"]]
     t = z["t"].astype(float)
     P = z["P_C"].astype(float)            # カメラ座標系の位置 (フレーム数, 関節数, 3)
 
+    # 時刻順に並べる
     order = np.argsort(t)
     t, P = t[order], P[order]
 
-    fs = 1.0 / np.median(np.diff(t))      # 時間間隔の中央値から求める
+    # サンプリング周波数を求める．
+    fs = 1.0 / np.median(np.diff(t))
+    # 等間隔グリッドへ線形補間(欠損も埋める)
     grid = np.arange(t[0], t[-1], 1.0 / fs)
     b, a = butter(FILTER_ORDER, min(fc / (fs / 2), MAX_NORM_FREQ))
 
     mean, disp = {}, {}
     for j in joints:
+        # 関節jの3次元座標を取り出す．
         X = P[:, names.index(j), :]
-        ok = np.isfinite(X).all(axis=1)   # 欠損（NaN/Inf）でないフレーム
+        # 欠損（NaN/Inf）でないフレームを抽出する．
+        ok = np.isfinite(X).all(axis=1)
+        # 線形補間で等間隔グリッドに変換する．
         Y = np.column_stack([np.interp(grid, t[ok], X[ok, k]) for k in range(3)])
         Y = filtfilt(b, a, Y, axis=0)
+
+        # 試行平均を引いて変位にする．
         mean[j] = Y.mean(axis=0)
         disp[j] = Y - mean[j]
     return TrialData(tt=grid - grid[0], fs=fs, mean=mean, disp=disp, joints=list(joints))
