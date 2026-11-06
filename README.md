@@ -1,5 +1,25 @@
 # TrackingExperience
 
+## 記録条件
+### 計測システム
+ - RealSense D435, Intel
+ - MediaPipe, Google
+  - Pose Landmarker Full
+  - Hand Landmarker
+
+### トラッキングタスク
+
+
+### 実験条件
+ - DPI(400, 800)
+ - ターゲット速度(Slow, Fast)
+  - Slowの定義
+  - Fastの定義
+ - 4条件x3試行 + 静止記録
+
+
+## ソフト麺
+
 ### コミットメッセージ例
 - add: 新機能・ファイルの追加
 - fix: バグや不具合の修正
@@ -7,7 +27,7 @@
 - docs: ドキュメントの変更
 - chore: 雑務，設定ファイルの変更
 
-### recordingのディレクトリ構造
+## recordingのディレクトリ構造
 ```text
 recordings/
 ├── aim_<name><mouseDPI>_<date>.../
