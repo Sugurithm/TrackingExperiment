@@ -172,16 +172,14 @@ def analyze_trial(trial_dir, source):
     u = data.vel(TIP)
     share_rows = []
     for dname, m in masks.items():
-        row = {"dir": dname, "time_s": m.sum() / data.fs,
-               f"agree_{other}": float(np.mean(lab[m] == lab_other[m])) if m.any() else np.nan,
+        row = {"dir": dname, "time_s": m.sum() / data.fs, f"agree_{other}": float(np.mean(lab[m] == lab_other[m])) if m.any() else np.nan,
                **shares(W, u, m)}
         if dname == "all":
             row.update(disp_share(data))
         share_rows.append(row)
 
     max_lag = int(round(MAX_LAG * data.fs))
-    sig = {"speed": {j: np.linalg.norm(data.vel(j), axis=1) for j in data.joints},
-           "disp_norm": {j: data.norm(j) for j in data.joints}}
+    sig = {"speed": {j: np.linalg.norm(data.vel(j), axis=1) for j in data.joints}, "disp_norm": {j: data.norm(j) for j in data.joints}}
     lag_rows = []
     for dname, m in masks.items():
         for sname in SIGNALS:
@@ -221,9 +219,11 @@ def summarize(share, lag):
     person_share = person_share.reset_index()
 
     main = lag[(lag.signal == MAIN_SIGNAL) & lag.valid]
-    person_lag = (main.groupby(["pair", "band", "dir", "person", "group"], sort=False)
-                  .agg(n=("lag_ms", "size"), mean_ms=("lag_ms", "mean"), sd_ms=("lag_ms", "std"),
-                       mean_r=("peak_r", "mean"), n_frames=("n_frames", "sum")).reset_index())
+    person_lag = (
+        main.groupby(["pair", "band", "dir", "person", "group"], sort=False)
+        .agg(n=("lag_ms", "size"), mean_ms=("lag_ms", "mean"), sd_ms=("lag_ms", "std"),
+        mean_r=("peak_r", "mean"), n_frames=("n_frames", "sum")).reset_index()
+        )
 
     rows = []
     for (sname, pair, dname), d in lag.groupby(["signal", "pair", "dir"], sort=False):
@@ -307,15 +307,15 @@ def run(source=SOURCE):
                     hline=all_rows)
 
     pairs = list(dict.fromkeys(person_lag.pair))
-    wide = person_lag.pivot_table(index=["person", "group", "band", "dir"], columns="pair",
-                                  values="mean_ms").reset_index()
+    wide = person_lag.pivot_table(index=["person", "group", "band", "dir"], columns="pair", values="mean_ms").reset_index()
     plot_by_dir(out_dir / "lag_by_dir.png", wide, pairs, [p.replace("-", " -> ") for p in pairs],
                 "lag [ms] (+ = distal later)", xlabel, hline=wide[wide.dir == "all"])
 
     agree = [c for c in person_share.columns if c.startswith("agree_") and c.endswith("_mean")][0]
-    print(person_share[person_share.dir != "all"]
-          .groupby(["band", "dir"], sort=False)[[f"share_proj_{k}_mean" for k in LINKS] + [agree]]
-          .mean().round(3).to_string())
+    print(
+        person_share[person_share.dir != "all"]
+        .groupby(["band", "dir"], sort=False)[[f"share_proj_{k}_mean" for k in LINKS] + [agree]]
+        .mean().round(3).to_string())
     print(summary[summary.signal == MAIN_SIGNAL].round(3).to_string(index=False))
 
 

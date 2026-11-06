@@ -21,8 +21,7 @@ HERE = Path(__file__).resolve().parent
 ROOT = HERE.parent
 sys.path.insert(0, str(HERE))
 import analysis_config as cfg
-from utilities import (adjacent_pairs, icc_oneway, iter_config_trials, load_trial, person_order,
-                       save_fig)
+from utilities import (adjacent_pairs, icc_oneway, iter_config_trials, load_trial, person_order, save_fig)
 
 # ---------- 設定 ----------
 OUT_DIR = HERE / cfg.OUT / "joint_lag_whole_trial"
@@ -91,9 +90,18 @@ def collect():
     rows = []
     for ses, trial in iter_config_trials(cfg, ROOT):
         for pair, lag_ms, peak_r in lag_norm_trial(trial.dir):
-            rows.append({"label": ses.label, "person": ses.person, "group": ses.group,
-                         "dpi": ses.dpi, "trial": trial.name, "band": trial.band,
-                         "seed": trial.seed, "pair": pair, "lag_ms": lag_ms, "peak_r": peak_r})
+            rows.append({
+                "label": ses.label, 
+                "person": ses.person, 
+                "group": ses.group, 
+                "dpi": ses.dpi, 
+                "trial": trial.name, 
+                "band": trial.band, 
+                "seed": trial.seed, 
+                "pair": pair, 
+                "lag_ms": lag_ms, 
+                "peak_r": peak_r
+                })
         print(f"完了: {ses.label}/{trial.name}")
 
     df = pd.DataFrame(rows)
@@ -144,8 +152,7 @@ def plot_by_person(path, df):
         d = df[(df.pair == pair) & df.valid]
         for band, off in [("slow", -0.12), ("fast", 0.12)]:
             b = d[d.band == band]
-            ax.scatter([x[p] + off for p in b.person], b.lag_ms, s=22,
-                       color=BAND_COLOR[band], alpha=0.8, label=band)
+            ax.scatter([x[p] + off for p in b.person], b.lag_ms, s=22, color=BAND_COLOR[band], alpha=0.8, label=band)
         g = d.groupby("person").lag_ms
         ax.errorbar([x[p] for p in g.mean().index], g.mean(), yerr=g.std(ddof=1), fmt="o",
                     color="black", ms=6, capsize=4, label="mean ± SD")

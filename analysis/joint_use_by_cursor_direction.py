@@ -305,15 +305,15 @@ def run(source=SOURCE):
                     hline=all_rows)
 
     pairs = list(dict.fromkeys(person_lag.pair))
-    wide = person_lag.pivot_table(index=["person", "group", "band", "dir"], columns="pair",
-                                  values="mean_ms").reset_index()
+    wide = person_lag.pivot_table(index=["person", "group", "band", "dir"], columns="pair", values="mean_ms").reset_index()
     plot_by_dir(out_dir / "lag_by_dir.png", wide, pairs, [p.replace("-", " -> ") for p in pairs],
                 "lag [ms] (+ = distal later)", xlabel, hline=wide[wide.dir == "all"])
 
     agree = [c for c in person_share.columns if c.startswith("agree_") and c.endswith("_mean")][0]
-    print(person_share[person_share.dir != "all"]
-          .groupby(["band", "dir"], sort=False)[[f"share_proj_{k}_mean" for k in LINKS] + [agree]]
-          .mean().round(3).to_string())
+    print(
+        person_share[person_share.dir != "all"]
+        .groupby(["band", "dir"], sort=False)[[f"share_proj_{k}_mean" for k in LINKS] + [agree]]
+        .mean().round(3).to_string())
     print(summary[summary.signal == MAIN_SIGNAL].round(3).to_string(index=False))
 
 
