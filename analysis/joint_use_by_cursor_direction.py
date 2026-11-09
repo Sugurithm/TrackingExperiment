@@ -12,9 +12,10 @@ joint_use_by_cursor_direction.py — カーソルの移動方向（8 方向）�
   1. 方向ラベル   d(t) = round(atan2(q̇_y, q̇_x) / 45°) mod 8
        q̇ = 画面上のカーソルの速度（x 右・y 上）
        名前は画面上の向き（R, UR, U, UL, L, DL, D, DR）。マウスの実空間の向きとは限らない
-  2. 寄与率（u = 手先 MCP3 の速度，w_k = リンクの相対速度）
-       射影（主）    share_k = Σ_{t∈S_d} w_k·u / Σ_{t∈S_d} |u|²
-       パワー（補助） share_k = Σ_{t∈S_d} |w_k|² / Σ_j Σ_{t∈S_d} |w_j|²   （ノイズ補正なし）
+  2. 寄与率（v_tip = 手先 MCP3 の速度，v_k = リンク k の速度。リンクの定義・計算は utilities の LINKS，projection_shares，power_shares）
+       射影（主）    share_proj_k = Σ_{t∈S_d} v_k·v_tip / Σ_{t∈S_d} |v_tip|²
+       パワー（補助） share_pow_k  = Σ_{t∈S_d} |v_k|² / Σ_j Σ_{t∈S_d} |v_j|²   （ノイズ補正なし）
+       変位（全体版と同じ，dir == "all" のみ）share_disp_k = Σ x_k·x_tip / Σ |x_tip|²
   3. 遅れ（マスク付き相互相関）
        r_d(τ) = Pearson{ a(t), b(t+τ) : t ∈ S_d } のピークの τ
        a, b = 隣り合う関節の速さ |v|（主）／変位のノルム |x|（元の信号，比較用）
@@ -42,7 +43,8 @@ HERE = Path(__file__).resolve().parent
 ROOT = HERE.parent
 sys.path.insert(0, str(HERE))
 import analysis_config as cfg  # noqa: E402
-from utilities import adjacent_pairs, icc_oneway, iter_config_trials, load_trial, save_fig  # noqa: E402
+from utilities import (BANDS, DPI, GROUP_COLOR, LINKS, TIP, adjacent_pairs, icc_oneway,  # noqa: E402
+                       iter_config_trials, load_trial, power_shares, projection_shares, save_fig)
 
 # ---------- 設定 ----------
 OUT_NAME = "joint_use_by_cursor_direction"
@@ -53,24 +55,12 @@ DIRS = ["R", "UR", "U", "UL", "L", "DL", "D", "DR"]
 DIR_DEG = [0, 45, 90, 135, 180, 225, 270, 315]
 N_DIR = len(DIRS)
 
-# リンク名: (近位の関節, 遠位の関節)。shoulder だけは肩そのものの速度（link_share_whole_trial.py と同じ）
-LINKS = {
-    "shoulder":  (None, "shoulder"),
-    "upper_arm": ("shoulder", "elbow"),
-    "forearm":   ("elbow", "wrist"),
-    "hand":      ("wrist", "mcp3"),
-}
-TIP = "mcp3"
-
 # 遅れ（joint_lag_whole_trial.py と同じ値）
 MAX_LAG = 0.5          # ずらす最大範囲 [s]（±）
 MIN_R = 0.0            # 有効判定: ピーク相関がこれ以上
 EDGE_MS = 10.0         # 有効判定: ピークが範囲の端からこの ms 以上内側
 SIGNALS = ["speed", "disp_norm"]   # speed = |v|（主），disp_norm = |x|（元の信号，比較用）
 MAIN_SIGNAL = "speed"
-
-GROUP_COLOR = {"FPS": "#2a78d6", "nonFPS": "#eb6834"}
-DPI = 120
 
 
 # =====================================================================
@@ -90,35 +80,26 @@ def screen_vel(data, source):
     return v
 
 
-def link_velocities(data):
-    """各リンクの速度 (N, 3) [mm/s]。合計 = 手先の速度"""
-    return {k: data.vel(b) if a is None else data.relative_vel(a, b) for k, (a, b) in LINKS.items()}
-
-
 # =====================================================================
 # 2. 寄与率
 # =====================================================================
-def shares(W, u, mask):
-    """フレーム集合 mask での射影とパワーの寄与率"""
+def shares(V, v_tip, mask):
+    """フレーム集合 mask での射影とパワーの寄与率（計算本体は utilities）"""
     out = {"n_frames": int(mask.sum())}
     if mask.sum() == 0:
         return out
-    um = u[mask]
-    den = np.sum(um * um)
-    out["tip_rms_mm_s"] = float(np.sqrt(den / mask.sum()))
-    pw = {k: float(np.sum(w[mask] ** 2)) for k, w in W.items()}
-    for k, w in W.items():
-        out[f"share_proj_{k}"] = float(np.sum(w[mask] * um) / den)
-        out[f"share_pow_{k}"] = pw[k] / sum(pw.values())
+    out["tip_rms_mm_s"] = float(np.sqrt(np.sum(v_tip[mask] ** 2) / mask.sum()))
+    proj, pow_ = projection_shares(V, v_tip, mask), power_shares(V, mask)
+    for k in V:
+        out[f"share_proj_{k}"] = proj[k]
+        out[f"share_pow_{k}"] = pow_[k]
     return out
 
 
 def disp_share(data):
-    """元の link_share_whole_trial.py と同じ変位の寄与率（全フレームのみ）"""
-    tip = data.disp[TIP]
-    den = np.sum(tip * tip)
-    return {f"share_disp_{k}": float(np.sum((data.disp[b] if a is None else data.relative(a, b)) * tip) / den)
-            for k, (a, b) in LINKS.items()}
+    """全体版（link_share_whole_trial.py）と同じ変位の寄与率（全フレームのみ）"""
+    s = projection_shares(data.link_disp(), data.disp[TIP])
+    return {f"share_disp_{k}": v for k, v in s.items()}
 
 
 # =====================================================================
@@ -166,13 +147,13 @@ def analyze_trial(trial_dir, source):
     lab_other = direction_labels(screen_vel(data, other))
     masks = {"all": np.ones(len(lab), bool), **{d: lab == i for i, d in enumerate(DIRS)}}
 
-    W = link_velocities(data)
-    u = data.vel(TIP)
+    V = data.link_vel()
+    v_tip = data.vel(TIP)
     share_rows = []
     for dname, m in masks.items():
         row = {"dir": dname, "time_s": m.sum() / data.fs,
                f"agree_{other}": float(np.mean(lab[m] == lab_other[m])) if m.any() else np.nan,
-               **shares(W, u, m)}
+               **shares(V, v_tip, m)}
         if dname == "all":
             row.update(disp_share(data))
         share_rows.append(row)
@@ -248,11 +229,10 @@ def plot_by_dir(path, df, value_cols, titles, ylabel, xlabel, hline=None):
     行 = 帯域，列 = value_cols，横軸 = 8 方向。被験者ごとの細線と、グループ平均の太線。
     hline: 方向で分けない値（dir == "all"）の表。グループ平均を破線で示す。
     """
-    bands = ["slow", "fast"]
-    fig, axs = plt.subplots(len(bands), len(value_cols), figsize=(3.6 * len(value_cols), 3.3 * len(bands)),
+    fig, axs = plt.subplots(len(BANDS), len(value_cols), figsize=(3.6 * len(value_cols), 3.3 * len(BANDS)),
                             sharex=True, sharey=True, squeeze=False)
     x = np.arange(N_DIR + 1)
-    for r, band in enumerate(bands):
+    for r, band in enumerate(BANDS):
         d = df[(df.band == band) & df.dir.isin(DIRS)]
         for c, col in enumerate(value_cols):
             ax = axs[r, c]
@@ -275,7 +255,7 @@ def plot_by_dir(path, df, value_cols, titles, ylabel, xlabel, hline=None):
             if c == 0:
                 ax.set_ylabel(f"{band}\n{ylabel}")
     axs[0, -1].legend(fontsize=8, loc="best")
-    fig.supxlabel(f"{xlabel} (R = right, U = up)  thin = participant, dashed = all directions")
+    fig.supxlabel(f"{xlabel} (R = right, U = up)")
     save_fig(fig, path, DPI)
 
 

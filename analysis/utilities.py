@@ -3,9 +3,15 @@
 """
 utilities.py — 関節解析スクリプトの共通部品
 
-  1. 試行データ   : TrialData（変位・ノルム・相対変位を取り出す）と load_trial()
+  1. 試行データ   : TrialData（変位・ノルム・相対変位・リンクを取り出す）と load_trial()
   2. 試行の探索   : Session / Trial と、config（SESSIONS, ATTEMPT）からの探し方
-  3. 統計・図・表の補助 : ICC、被験者の並び順、図の保存
+  3. リンク寄与率 : 射影寄与率・パワー寄与率（変位版・速度版で共通）
+  4. 統計・図・表の補助 : ICC、被験者の並び順、図の保存
+
+記号（スクリプト・資料で共通）
+  x_k, x_tip : リンク k / 手先 MCP3 の変位（TrialData.disp 由来）
+  v_k, v_tip : リンク k / 手先 MCP3 の速度（TrialData.vel 由来）
+  4 リンクの和は手先になる：Σ_k x_k = x_tip,  Σ_k v_k = v_tip
 
 解析スクリプト側には「何を計算して何を出力するか」だけを書き、
 データの読み込み・前処理・探索はすべてここに置く。
@@ -24,6 +30,20 @@ NPZ_PATH = Path("joints") / "rs_joints.npz"       # 試行フォルダ内の関�
 TASK_CSV = "task.csv"                             # 試行フォルダ内の課題ログ（epoch で RealSense と時刻合わせ）
 FILTER_ORDER = 4                                  # ローパスフィルタの次数
 MAX_NORM_FREQ = 0.99                              # 遮断周波数の上限（ナイキスト比）
+
+# リンク名: (近位の関節, 遠位の関節)。shoulder だけは肩そのもの（近位なし）
+LINKS = {
+    "shoulder":  (None, "shoulder"),
+    "upper_arm": ("shoulder", "elbow"),
+    "forearm":   ("elbow", "wrist"),
+    "hand":      ("wrist", "mcp3"),
+}
+TIP = "mcp3"                                      # 手先（マウスを握る手の中心）
+
+# 図の共通設定
+BANDS = ["slow", "fast"]                          # 図の行の順
+GROUP_COLOR = {"FPS": "#2a78d6", "nonFPS": "#eb6834"}
+DPI = 120
 
 _TRIAL_RE = re.compile(r"(slow|fast)_s(\d+)(?:_(\d+))?")   # trial_01_slow_s1_2 など
 _SESSION_RE = re.compile(r"aim_([A-Za-z]+)(\d+)_")         # aim_tanaka800_... など
@@ -76,6 +96,14 @@ class TrialData:
     def target_vel(self):
         """ターゲットの速度 (N, 2) [cm/s]"""
         return None if self.target is None else np.gradient(self.target, 1.0 / self.fs, axis=0)
+
+    def link_disp(self):
+        """各リンクの変位 x_k {名前: (N, 3)} [mm]。合計 = 手先の変位"""
+        return {k: self.disp[b] if a is None else self.relative(a, b) for k, (a, b) in LINKS.items()}
+
+    def link_vel(self):
+        """各リンクの速度 v_k {名前: (N, 3)} [mm/s]。合計 = 手先の速度"""
+        return {k: self.vel(b) if a is None else self.relative_vel(a, b) for k, (a, b) in LINKS.items()}
 
     def pairs(self):
         return adjacent_pairs(self.joints)
@@ -229,7 +257,30 @@ def iter_config_trials(cfg, root):
 
 
 # =====================================================================
-# 3. 統計・図・表の補助
+# 3. リンク寄与率（変位版・速度版で共通）
+# =====================================================================
+def projection_shares(W, tip, mask=None):
+    """
+    射影寄与率  share_k = Σ_{t∈mask} w_k·tip / Σ_{t∈mask} |tip|²   （4 リンクの合計 = 1）
+    W: {リンク名: (N, 3)}（変位 x_k でも速度 v_k でもよい），tip: (N, 3)（同じ量の手先）
+    mask: bool (N,) または None（全フレーム）。手先と同じ向きの動きは正、直交は 0、逆向きは負。
+    """
+    m = slice(None) if mask is None else mask
+    t = tip[m]
+    den = np.sum(t * t)
+    return {k: float(np.sum(w[m] * t) / den) for k, w in W.items()}
+
+
+def power_shares(W, mask=None):
+    """パワー寄与率  share_k = Σ|w_k|² / Σ_j Σ|w_j|²   （ノイズ補正なしの補助指標。常に 0 以上）"""
+    m = slice(None) if mask is None else mask
+    pw = {k: float(np.sum(w[m] ** 2)) for k, w in W.items()}
+    total = sum(pw.values())
+    return {k: v / total for k, v in pw.items()}
+
+
+# =====================================================================
+# 4. 統計・図・表の補助
 # =====================================================================
 def icc_oneway(values, groups):
     """一元配置の級内相関係数 ICC(1)（個人差の大きさ）"""

@@ -3,15 +3,17 @@
 """
 link_share_whole_trial.py — 手先(MCP3)の変位に対する各リンクの射影寄与率（解析区間 40 s 全体）
 
-  手先の変位 tip = shoulder + upper_arm + forearm + hand
+  手先の変位 x_tip = x_shoulder + x_upper_arm + x_forearm + x_hand
     shoulder  = 肩の変位
     upper_arm = 肘 - 肩、forearm = 手首 - 肘、hand = MCP3 - 手首 の相対変位
-  寄与率 share_k = Σ(v_k · tip) / Σ|tip|²   （4 リンクの合計 = 1）
+  寄与率 share_disp_k = Σ(x_k · x_tip) / Σ|x_tip|²   （4 リンクの合計 = 1）
+  リンクの定義と計算本体は utilities（LINKS, TrialData.link_disp, projection_shares）。
+  方向別版（joint_use_by_*_direction.py）の dir == "all" と同じ値になる。
 
 出力: <cfg.OUT>/link_share_whole_trial/
-  all_link_share.csv     試行ごとの寄与率と RMS
+  all_link_share.csv     試行ごとの寄与率（share_disp_*）と RMS
   person_link_share.csv  被験者 × 帯域ごとの平均・SD
-  link_share.png         被験者ごとの寄与率（slow / fast）
+  link_share.png         被験者ごとの寄与率（行 = slow/fast，列 = リンク，色 = 群，点 = 各試行）
 """
 import sys
 from pathlib import Path
@@ -19,38 +21,31 @@ from pathlib import Path
 import numpy as np
 import pandas as pd
 import matplotlib.pyplot as plt
+from matplotlib.patches import Patch
 
 HERE = Path(__file__).resolve().parent
 ROOT = HERE.parent
 sys.path.insert(0, str(HERE))
 import analysis_config as cfg  # noqa: E402
-from utilities import iter_config_trials, load_trial, person_order, save_fig  # noqa: E402
+from utilities import (BANDS, DPI, GROUP_COLOR, LINKS, TIP, iter_config_trials,  # noqa: E402
+                       load_trial, person_order, projection_shares, save_fig)
 
 # ---------- 設定 ----------
 OUT_DIR = HERE / cfg.OUT / "link_share_whole_trial"
-# リンク名: (近位の関節, 遠位の関節)。shoulder だけは肩そのものの変位（近位なし）
-LINKS = {
-    "shoulder":  (None, "shoulder"),
-    "upper_arm": ("shoulder", "elbow"),
-    "forearm":   ("elbow", "wrist"),
-    "hand":      ("wrist", "mcp3"),
-}
-SHARE_COLS = [f"share_{k}" for k in LINKS]
-DPI = 120
+SHARE_COLS = [f"share_disp_{k}" for k in LINKS]
 
 
 # ---------- 解析手法 ----------
 def link_share(trial_dir):
-    """1 試行の各リンクの寄与率と RMS [mm]"""
+    """1 試行の各リンクの寄与率（変位）と RMS [mm]"""
     data = load_trial(trial_dir, fc=cfg.FC)
-    link = {k: data.disp[b] if a is None else data.relative(a, b) for k, (a, b) in LINKS.items()}
-    tip = data.disp["mcp3"]                      # = 4 リンクの和
-    den = np.sum(tip * tip)
+    X = data.link_disp()
+    x_tip = data.disp[TIP]                       # = 4 リンクの和
 
-    row = {"fs": data.fs, "tip_rms_mm": np.sqrt(den / len(tip))}
-    for k, v in link.items():
-        row[f"share_{k}"] = np.sum(v * tip) / den
-        row[f"rms_{k}_mm"] = np.sqrt(np.mean(np.sum(v ** 2, axis=1)))
+    row = {"fs": data.fs, "tip_rms_mm": float(np.sqrt(np.mean(np.sum(x_tip ** 2, axis=1))))}
+    for k, s in projection_shares(X, x_tip).items():
+        row[f"share_disp_{k}"] = s
+        row[f"rms_{k}_mm"] = float(np.sqrt(np.mean(np.sum(X[k] ** 2, axis=1))))
     return row
 
 
@@ -71,24 +66,33 @@ def collect():
     return pd.DataFrame(rows)
 
 
-# ---------- 図 ----------
+# ---------- 図（方向別版と同じ割り付け：行 = 帯域，列 = リンク，色 = 群） ----------
 def plot_link_share(path, df):
-    """人ごとの寄与率（左: slow、右: fast）"""
+    """横軸 = 被験者。棒 = 試行の平均（色 = 群），点 = 各試行"""
     order, group_of = person_order(df)
-    fig, axs = plt.subplots(1, 2, figsize=(14, 4), sharey=True)
-    for ax, band in zip(axs, ["slow", "fast"]):
-        g = df[df.band == band].groupby("person")[SHARE_COLS].agg(["mean", "std"]).reindex(order)
-        for i, (name, col) in enumerate(zip(LINKS, SHARE_COLS)):
-            ax.bar(np.arange(len(order)) + (i - 1.5) * 0.2, g[(col, "mean")], 0.2, yerr=g[(col, "std")], capsize=2, label=name.replace("_", " "))
+    x_of = {p: i for i, p in enumerate(order)}
+    colors = [GROUP_COLOR.get(group_of[p], "0.5") for p in order]
+
+    fig, axs = plt.subplots(len(BANDS), len(LINKS), figsize=(3.6 * len(LINKS), 3.3 * len(BANDS)),
+                            sharex=True, sharey=True, squeeze=False)
+    for r, band in enumerate(BANDS):
+        d = df[df.band == band]
+        for c, (name, col) in enumerate(zip(LINKS, SHARE_COLS)):
+            ax = axs[r, c]
+            mean = d.groupby("person")[col].mean().reindex(order)
+            ax.bar(range(len(order)), mean, 0.7, color=colors, alpha=0.8)
+            ax.scatter([x_of[p] for p in d.person], d[col], s=10, color="k", alpha=0.6, zorder=3)
+            ax.axhline(0, color="gray", lw=0.6)
+            ax.grid(alpha=0.3)
+            if r == 0:
+                ax.set_title(name.replace("_", " "))
+            if c == 0:
+                ax.set_ylabel(f"{band}\nprojection share")
+    for ax in axs[-1]:
         ax.set_xticks(range(len(order)))
-        ax.set_xticklabels([f"{p}\n({group_of[p]})" for p in order])
-        ax.axhline(0, color="gray", lw=0.8)
-        ax.set_title(band)
-        ax.grid(alpha=0.3)
-    for ax in axs:
-        ax.set_xlabel("participant")
-    axs[0].set_ylabel("share of tip displacement")
-    axs[0].legend(ncol=4)
+        ax.set_xticklabels(order, fontsize=8)
+    axs[0, -1].legend(handles=[Patch(color=v, label=k) for k, v in GROUP_COLOR.items()], fontsize=8)
+    fig.supxlabel("participant")
     save_fig(fig, path, DPI)
 
 
