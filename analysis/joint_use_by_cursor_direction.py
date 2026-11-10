@@ -279,7 +279,7 @@ def run(source=SOURCE):
 
     names = [k.replace("_", " ") for k in LINKS]
     all_rows = person_share[person_share.dir == "all"]
-    for kind, label in [("proj", "projection share"), ("pow", "power share")]:
+    for kind, label in [("proj", "Link share"), ("pow", "Power share")]:
         cols = [f"share_{kind}_{k}_mean" for k in LINKS]
         plot_by_dir(out_dir / f"share_{kind}_by_dir.png", person_share, cols, names, label, xlabel,
                     hline=all_rows)

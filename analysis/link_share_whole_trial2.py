@@ -25,9 +25,8 @@ import matplotlib.pyplot as plt
 HERE = Path(__file__).resolve().parent
 ROOT = HERE.parent
 sys.path.insert(0, str(HERE))
-import analysis_config as cfg  # noqa: E402
-from utilities import (BANDS, DPI, LINKS, TIP, iter_config_trials,  # noqa: E402
-                       load_trial, person_order, projection_shares, save_fig)
+import analysis_config as cfg
+from utilities import (BANDS, DPI, LINKS, TIP, iter_config_trials, load_trial, person_order, projection_shares, save_fig)
 
 # ---------- 設定 ----------
 OUT_DIR = HERE / cfg.OUT / "link_share_whole_trial"
