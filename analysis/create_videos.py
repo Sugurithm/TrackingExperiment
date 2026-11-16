@@ -182,7 +182,7 @@ def put_text(img, lines):
 
 
 def make_video(trial_dir, out, title, task_only, scale):
-    from lib.rs_device import Playback             # pyrealsense2 は書き出すときだけ読む
+    from experiment.lib.rs_device import Playback             # pyrealsense2 は書き出すときだけ読む
 
     epoch0, t_end = task_clock(trial_dir)
     if task_only and epoch0 is None:
