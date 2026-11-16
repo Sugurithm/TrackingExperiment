@@ -45,7 +45,7 @@ import numpy as np
 import pandas as pd
 import cv2
 
-import config
+import experiment.config
 
 # ══════════════════════════════════════════════════
 #  対象のセッション（ここだけを編集する）
