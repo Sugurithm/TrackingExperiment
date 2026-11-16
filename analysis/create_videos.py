@@ -76,7 +76,7 @@ SESSIONS = [
 ]
 
 # BANDS = ["slow", "fast"]
-BANDS = ["slow"]
+BANDS = ["fast"]
 # SEEDS = [1, 2, 3]
 SEEDS = [1]
 OUT_DIR = config.RECORDINGS_DIR / "videos"
